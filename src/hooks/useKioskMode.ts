@@ -77,6 +77,7 @@ export function useKioskMode({
       x: (canvasWidth - gridWidth * targetScale) / 2 - minX * targetScale,
       y: (canvasHeight - gridHeight * targetScale) / 2 - minY * targetScale,
     };
+    // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.interpolationSpeed = transitionSpeed;
 
     console.log('[Kiosk] Zooming to overview');
@@ -93,11 +94,14 @@ export function useKioskMode({
     const centerX = event.x + event.width / 2;
     const centerY = event.y + event.height / 2;
 
+    // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.targetScale = targetScale;
+    // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.targetOffset = {
       x: canvasWidth / 2 - centerX * targetScale,
       y: canvasHeight / 2 - centerY * targetScale,
     };
+    // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.interpolationSpeed = transitionSpeed;
 
     console.log(`[Kiosk] Zooming to article ${index + 1}/${events.length}: ${event.title}`);

@@ -30,7 +30,7 @@ export function useManualMode({
   canvasHeight,
   onManualModeStart,
   inactivityTimeout = DEFAULT_INACTIVITY_TIMEOUT,
-  transitionSpeed = DEFAULT_TRANSITION_SPEED,
+  transitionSpeed: _transitionSpeed = DEFAULT_TRANSITION_SPEED,
   isKioskModeEnabled = true,
 }: UseManualModeOptions): UseManualModeReturn {
   const [isManualMode, setIsManualMode] = useState(false);

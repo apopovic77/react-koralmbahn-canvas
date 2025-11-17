@@ -61,7 +61,6 @@ function App() {
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
-  const cullingRef = useRef<ViewportCulling | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<KoralmEvent[]>([]);
   const [is3DMode, setIs3DMode] = useState(true);
@@ -302,12 +301,7 @@ function App() {
       maxY: maxY,
     });
 
-    // Initialize viewport culling (once, reused every frame)
-    cullingRef.current = new ViewportCulling(
-      viewportRef.current,
-      window.innerWidth,
-      window.innerHeight
-    );
+    // Viewport culling is handled internally by the engine
 
     // Game engine pattern: separate render and update loops
     const renderInterval = 1000 / RENDER_FPS; // 16.67ms for 60 FPS
@@ -315,7 +309,7 @@ function App() {
 
     // Animation loop with dual FPS (like professional game engines)
     const render = (currentTime: number) => {
-      if (!viewportRef.current || !cullingRef.current) return;
+      if (!viewportRef.current) return;
 
       // RENDER LOOP (60 FPS): Calculate render delta
       const renderDelta = currentTime - lastFrameTimeRef.current;
@@ -349,26 +343,11 @@ function App() {
       const currentScale = viewportRef.current.scale;
       const useHighRes = currentScale >= IMAGE_LOD_THRESHOLD;
 
-      // UPDATE LOOP (25 FPS): Update culling bounds only when needed
-      if (shouldUpdate) {
-        cullingRef.current.updateBounds();
-        cullingRef.current.resetStats();
-      }
-      const culling = cullingRef.current;
-
-      // Draw event cards (with intelligent viewport culling)
+      // Draw event cards
       events.forEach((event) => {
         if (!event.x || !event.y || !event.width || !event.height) return;
 
         const { x, y, width, height } = event;
-
-        // Skip cards that are not visible in viewport
-        if (!culling.isVisible({ x, y, width, height })) {
-          culling.incrementCulled();
-          return;
-        }
-
-        culling.incrementRendered();
 
         // Load high-res image ONLY for visible events when zoomed in
         // Skip if this URL has already failed to load
@@ -553,11 +532,8 @@ function App() {
       ctx.restore();
 
       // Draw UI overlay (not affected by viewport transform)
-      const stats = culling.getStats();
-      const efficiency = culling.getEfficiency();
-
       ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-      ctx.fillRect(10, 10, 450, 150);
+      ctx.fillRect(10, 10, 450, 130);
       ctx.fillStyle = '#fff';
       ctx.font = '14px sans-serif';
       ctx.textAlign = 'left';
@@ -575,22 +551,17 @@ function App() {
         20,
         70
       );
-      ctx.fillText(
-        `Culling: ${stats.rendered} rendered / ${stats.culled} culled (${efficiency.toFixed(1)}% efficiency)`,
-        20,
-        90
-      );
       const actualRenderFPS = renderDelta > 0 ? Math.round(1000 / renderDelta) : 0;
       const actualUpdateFPS = updateDelta > 0 ? Math.round(1000 / updateDelta) : 0;
       ctx.fillText(
         `Render: ${actualRenderFPS}/${RENDER_FPS} FPS | Update: ${actualUpdateFPS}/${UPDATE_FPS} FPS | Frame: ${renderDelta.toFixed(1)}ms`,
         20,
-        110
+        90
       );
       ctx.fillText(
         'Mouse wheel = zoom | Right-click drag = pan',
         20,
-        130
+        110
       );
 
       // F-key controls
