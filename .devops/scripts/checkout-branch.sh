@@ -2,9 +2,17 @@
 
 set -euo pipefail
 
-REPO_ROOT="{{REPO_ROOT}}"
-DEV_BRANCH="{{DEV_BRANCH}}"
-MAIN_BRANCH="{{MAIN_BRANCH}}"
+# Auto-detect repository root (local or server)
+if [[ -d "/var/code/react-koralmbahn-canvas" ]]; then
+  REPO_ROOT="/var/code/react-koralmbahn-canvas"
+elif [[ -d "/Volumes/DatenAP/Code/react-koralmbahn-canvas" ]]; then
+  REPO_ROOT="/Volumes/DatenAP/Code/react-koralmbahn-canvas"
+else
+  REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+fi
+
+DEV_BRANCH="dev"
+MAIN_BRANCH="main"
 
 usage() {
   cat <<'USAGE'
@@ -13,8 +21,8 @@ Usage: checkout-branch.sh <branch>
 Switches the working tree to the requested branch and fast-forwards it from origin.
 
 Examples:
-  checkout-branch.sh {{DEV_BRANCH}}
-  checkout-branch.sh {{MAIN_BRANCH}}
+  checkout-branch.sh dev
+  checkout-branch.sh main
 USAGE
 }
 

@@ -2,8 +2,16 @@
 
 set -euo pipefail
 
-REPO_ROOT="{{REPO_ROOT}}"
-BUILD_COMMAND="{{BUILD_COMMAND}}"
+# Auto-detect repository root (local or server)
+if [[ -d "/var/code/react-koralmbahn-canvas" ]]; then
+  REPO_ROOT="/var/code/react-koralmbahn-canvas"
+elif [[ -d "/Volumes/DatenAP/Code/react-koralmbahn-canvas" ]]; then
+  REPO_ROOT="/Volumes/DatenAP/Code/react-koralmbahn-canvas"
+else
+  REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+fi
+
+BUILD_COMMAND="npm run build"
 
 usage() {
   cat <<'USAGE'
