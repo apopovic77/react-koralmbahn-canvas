@@ -1,73 +1,110 @@
-# React + TypeScript + Vite
+# React Koralmbahn Canvas Demo
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Demo application showcasing [arkturian-canvas-engine](https://www.npmjs.com/package/arkturian-canvas-engine) - a high-performance canvas rendering engine with zoom, pan, and layout capabilities.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Interactive canvas with 5 colorful demo stations
+- Mouse wheel zoom (zoom in/out towards cursor)
+- Right-click drag to pan (or Ctrl/Cmd + left-click)
+- Touch support (pinch-to-zoom, one-finger pan)
+- Smooth interpolation for buttery animations
+- Grid background for spatial orientation
+- Real-time zoom/pan overlay display
 
-## React Compiler
+## Installation
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Development
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+Open http://localhost:5173/ in your browser.
+
+## Controls
+
+- **Zoom**: Mouse wheel
+- **Pan**: Right-click + drag (or Ctrl/Cmd + left-click + drag)
+- **Touch**: Pinch to zoom, one-finger drag to pan
+
+## Project Structure
+
+```
+src/
+├── App.tsx          # Main demo application
+├── App.css          # Styles for canvas and UI
+└── main.tsx         # React entry point
+```
+
+## Using arkturian-canvas-engine
+
+This demo shows the minimal setup needed to use the canvas engine:
+
+```typescript
+import { ViewportTransform } from 'arkturian-canvas-engine';
+
+// 1. Create viewport transform
+const viewport = new ViewportTransform(canvas);
+
+// 2. Set content bounds
+viewport.setContentBounds({
+  width: 800,
+  height: 600,
+  minX: 0,
+  minY: 0,
+  maxX: 800,
+  maxY: 600,
+});
+
+// 3. Update in animation loop
+viewport.update();
+
+// 4. Apply transform to canvas context
+ctx.save();
+viewport.applyTransform(ctx);
+// ... draw your content here ...
+ctx.restore();
+
+// 5. Clean up on unmount
+viewport.destroy();
+```
+
+## Important Notes
+
+**ContentBounds must include `width` and `height`!**
+
+```typescript
+// ❌ Wrong - missing width/height
+viewport.setContentBounds({
+  minX: 0,
+  minY: 0,
+  maxX: 800,
+  maxY: 600,
+});
+
+// ✅ Correct - includes width/height
+viewport.setContentBounds({
+  width: 800,   // Required!
+  height: 600,  // Required!
+  minX: 0,
+  minY: 0,
+  maxX: 800,
+  maxY: 600,
+});
+```
+
+Without `width` and `height`, scale calculations will fail (NaN values).
+
+## License
+
+MIT
+
+## Related Projects
+
+- [arkturian-canvas-engine](https://www.npmjs.com/package/arkturian-canvas-engine) - The rendering engine used in this demo
+- [arkturian-typescript-utils](https://www.npmjs.com/package/arkturian-typescript-utils) - Utilities (Vector2, etc.)

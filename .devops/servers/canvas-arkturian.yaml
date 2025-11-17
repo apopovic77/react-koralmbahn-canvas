@@ -1,0 +1,30 @@
+server:
+  name: "canvas-arkturian"
+  type: "node"
+  host: "arkturian.com"
+  user: "root"
+  port: 22
+  deploy_path: "/var/www/canvas.arkturian.com"
+
+service:
+  type: "systemd"
+  name: "nginx"
+  port: 443
+
+nginx:
+  enabled: true
+  server_name: "canvas.arkturian.com"
+  port: 443
+
+environment:
+  NODE_ENV: "production"
+
+node:
+  install_command: "npm ci"
+  build_command: "npm run build"
+  dist_path: "dist"
+
+backup:
+  enabled: true
+  dir: "/var/backups"
+  prefix: "canvas-arkturian"

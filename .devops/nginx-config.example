@@ -1,0 +1,54 @@
+# Nginx configuration for canvas.arkturian.com
+# Place this file in: /etc/nginx/sites-available/canvas.arkturian.com
+# Then create symlink: sudo ln -s /etc/nginx/sites-available/canvas.arkturian.com /etc/nginx/sites-enabled/
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name canvas.arkturian.com;
+
+    # Redirect HTTP to HTTPS
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name canvas.arkturian.com;
+
+    # SSL Configuration (managed by certbot or custom)
+    ssl_certificate /etc/letsencrypt/live/canvas.arkturian.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/canvas.arkturian.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # Document root
+    root /var/www/canvas.arkturian.com;
+    index index.html;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript application/x-javascript application/javascript application/xml+rss application/json image/svg+xml;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # SPA routing - serve index.html for all requests
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache static assets
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # Access and error logs
+    access_log /var/log/nginx/canvas.arkturian.com.access.log;
+    error_log /var/log/nginx/canvas.arkturian.com.error.log;
+}
