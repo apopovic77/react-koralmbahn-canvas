@@ -70,7 +70,9 @@ export function useKioskMode({
     const targetScale = Math.min(scaleX, scaleY, 1) * 0.9; // 90% to add padding
 
     // Center the grid within the viewport
+    // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.targetScale = targetScale;
+    // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.targetOffset = {
       x: (canvasWidth - gridWidth * targetScale) / 2 - minX * targetScale,
       y: (canvasHeight - gridHeight * targetScale) / 2 - minY * targetScale,

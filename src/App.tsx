@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import './App.css';
-import { ViewportTransform, useLODTransitions, ViewportCulling } from 'arkturian-canvas-engine';
+import { ViewportTransform, useLODTransitions } from 'arkturian-canvas-engine';
 import { fetchKoralmEvents } from './api/koralmbahnApi';
 import type { KoralmEvent } from './types/koralmbahn';
 import QRCode from 'qrcode';
@@ -30,7 +30,7 @@ interface GridLayout {
 function calculateOptimalGrid(
   eventCount: number,
   viewportWidth: number,
-  viewportHeight: number
+  _viewportHeight: number
 ): GridLayout {
   if (eventCount === 0) {
     return { cols: 1, rows: 1, cardWidth: BASE_CARD_WIDTH, cardHeight: BASE_CARD_HEIGHT };
@@ -89,7 +89,7 @@ function App() {
   });
 
   // Kiosk mode hook
-  const { kioskMode, selectedArticleIndex, articlesViewedCount, stopKiosk } = useKioskMode({
+  const { kioskMode, articlesViewedCount } = useKioskMode({
     viewport: viewportRef.current,
     events,
     canvasWidth: window.innerWidth,
@@ -174,11 +174,11 @@ function App() {
         };
       });
 
-      setEvents(positioned);
+      setEvents(positioned as KoralmEvent[]);
       console.log(`[App] Loaded ${positioned.length} events`);
 
       // Preload low-res images using IndexedDB cache
-      await preloadImages(positioned);
+      await preloadImages(positioned as KoralmEvent[]);
 
       // Generate QR codes for events
       positioned.forEach(async (event) => {
@@ -656,7 +656,7 @@ function wrapText(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
-  fontSize: number
+  _fontSize: number
 ): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
