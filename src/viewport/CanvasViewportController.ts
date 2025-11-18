@@ -13,11 +13,6 @@ export class CanvasViewportController {
     this.configureCanvasSize();
     this.viewport = new ViewportTransform(canvas);
 
-    // Enable/disable translation bounds based on mode
-    // Snap-to-Content: Disable translation bounds (free pan everywhere)
-    // Classic Mode: Enable translation bounds (strict rubberband)
-    this.viewport.setEnableTranslationBounds(!enableSnapToContent);
-
     this.attachResizeListener();
     return this.viewport;
   }
