@@ -268,7 +268,7 @@ function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const controller = viewportControllerRef.current;
-    const viewport = controller.init(canvas, isSnapToContentEnabled);
+    const viewport = controller.init(canvas);
     viewportRef.current = viewport;
 
     return () => {

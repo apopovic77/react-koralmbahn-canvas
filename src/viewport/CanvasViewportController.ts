@@ -8,7 +8,7 @@ export class CanvasViewportController {
   private canvas: HTMLCanvasElement | null = null;
   private resizeHandler: (() => void) | null = null;
 
-  init(canvas: HTMLCanvasElement, enableSnapToContent: boolean = false): ViewportTransform {
+  init(canvas: HTMLCanvasElement): ViewportTransform {
     this.canvas = canvas;
     this.configureCanvasSize();
     this.viewport = new ViewportTransform(canvas);
