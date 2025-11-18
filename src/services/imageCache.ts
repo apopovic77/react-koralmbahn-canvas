@@ -62,7 +62,6 @@ class ImageCacheService {
           // Convert blob to image
           const img = new Image();
           img.onload = () => {
-            console.log(`[ImageCache] Cache hit: ${url}`);
             resolve(img);
           };
           img.onerror = () => {
@@ -99,7 +98,6 @@ class ImageCacheService {
       const request = store.put(cached);
 
       request.onsuccess = () => {
-        console.log(`[ImageCache] Cached: ${url}`);
         resolve();
       };
 
@@ -119,7 +117,6 @@ class ImageCacheService {
     const thumbnailUrl = this.buildThumbnailUrl(originalUrl);
 
     try {
-      console.log(`[ImageCache] Fetching: ${thumbnailUrl}`);
       const response = await fetch(thumbnailUrl);
 
       if (!response.ok) {

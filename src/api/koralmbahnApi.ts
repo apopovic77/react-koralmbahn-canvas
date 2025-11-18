@@ -84,26 +84,31 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
   let imageUrl: string | null = null;
   if (event.media && event.media.length > 0) {
     const firstMedia = event.media[0];
-    if (firstMedia?.url) {
-      const storageId = firstMedia.storage_object?.id;
+
+    // Check if URL is already a storage API URL
+    const isStorageUrl = firstMedia?.url?.includes('api-storage.arkturian.com');
+
+    if (isStorageUrl && firstMedia?.url) {
+      // Already a storage URL - use directly
+      imageUrl = firstMedia.url;
+    } else if (firstMedia?.id || firstMedia?.storage_object?.id) {
+      // Build storage URL from ID
+      const storageId = firstMedia.id || firstMedia.storage_object?.id;
       const mimeType = firstMedia.storage_object?.mime_type;
       const isSvg = mimeType?.toLowerCase().includes('svg');
+      const params: Record<string, string | number> = {};
 
-      // Build optimized storage URL with aspect ratio & format
-      if (storageId) {
-        const params: Record<string, string | number> = {};
-
-        // SVGs: Always convert to PNG with aspect ratio for letterboxing
-        if (isSvg) {
-          params.format = 'png';
-          params.aspect_ratio = '5:7'; // Card aspect ratio (width:height)
-        }
-
-        imageUrl = buildStorageMediaUrl(storageId, params);
-      } else {
-        // Fallback to original URL if no storage_object
-        imageUrl = firstMedia.url;
+      // SVGs: Always convert to PNG with aspect ratio for letterboxing
+      if (isSvg) {
+        params.format = 'png';
+        params.aspect_ratio = '5:7'; // Card aspect ratio (width:height)
       }
+
+      imageUrl = buildStorageMediaUrl(storageId!, params);
+    } else {
+      // No storage ID available - skip external URLs to avoid CORS errors
+      console.warn(`[KoralmAPI] Event ${event.event_id}: No storage ID, skipping external URL to avoid CORS:`, firstMedia?.url);
+      imageUrl = null;
     }
   }
 

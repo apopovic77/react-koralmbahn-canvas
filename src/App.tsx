@@ -1,56 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import './App.css';
 import { ViewportTransform, useLODTransitions } from 'arkturian-canvas-engine';
+import { LayoutEngine } from 'arkturian-canvas-engine/src/layout/LayoutEngine';
+
 import { fetchKoralmEvents } from './api/koralmbahnApi';
 import type { KoralmEvent } from './types/koralmbahn';
 import QRCode from 'qrcode';
 import { useKioskMode } from './hooks/useKioskMode';
 import { useManualMode } from './hooks/useManualMode';
 import { useImageCache } from './hooks/useImageCache';
+import { DayTimelineLayouter, type DayAxisRow, type DayTimelineBounds, type DayTimelineLayouterConfig } from './layouts/DayTimelineLayouter';
+import { EventCanvasRenderer } from './render/EventCanvasRenderer';
+import { CanvasViewportController } from './viewport/CanvasViewportController';
+import { SnapToContentController } from './viewport/SnapToContentController';
 
-// Card dimensions (magazine-style layout with wrapped text)
-const BASE_CARD_WIDTH = 250;
-const BASE_CARD_HEIGHT = 350;
-const CARD_ASPECT_RATIO = BASE_CARD_HEIGHT / BASE_CARD_WIDTH; // 1.4
 const PADDING = 15;
-const CARD_GAP = 30;
 
 // Performance settings (game engine pattern)
 const RENDER_FPS = 60; // Visual rendering at 60 FPS for smooth animations
 const UPDATE_FPS = 25; // Logic updates (culling, LOD) at 25 FPS for performance
-
-// Adaptive grid layout configuration
-interface GridLayout {
-  cols: number;
-  rows: number;
-  cardWidth: number;
-  cardHeight: number;
-}
-
-function calculateOptimalGrid(
-  eventCount: number,
-  viewportWidth: number,
-  _viewportHeight: number
-): GridLayout {
-  if (eventCount === 0) {
-    return { cols: 1, rows: 1, cardWidth: BASE_CARD_WIDTH, cardHeight: BASE_CARD_HEIGHT };
-  }
-
-  // Use BASE_CARD_WIDTH as target size and calculate columns
-  const cols = Math.max(1, Math.floor((viewportWidth + CARD_GAP) / (BASE_CARD_WIDTH + CARD_GAP)));
-  const rows = Math.ceil(eventCount / cols);
-
-  // ProductFinder formula: cellLen = (frameWidth - spacing * (cols - 1)) / cols
-  const cardWidth = (viewportWidth - CARD_GAP * (cols - 1)) / cols;
-  const cardHeight = cardWidth * CARD_ASPECT_RATIO;
-
-  return {
-    cols,
-    rows,
-    cardWidth: Math.floor(cardWidth),
-    cardHeight: Math.floor(cardHeight)
-  };
-}
 
 // Image LOD (Level of Detail) threshold
 const IMAGE_LOD_THRESHOLD = 1.5; // Above this zoom: use high-res images, below: use thumbnails
@@ -61,11 +30,24 @@ function App() {
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
+  const dayLayouterRef = useRef(new DayTimelineLayouter());
+  const layoutEngineRef = useRef(new LayoutEngine<KoralmEvent>(dayLayouterRef.current));
+  const viewportControllerRef = useRef(new CanvasViewportController());
+  const snapControllerRef = useRef(new SnapToContentController());
+  const rendererRef = useRef<EventCanvasRenderer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [events, setEvents] = useState<KoralmEvent[]>([]);
+  const [positionedEvents, setPositionedEvents] = useState<KoralmEvent[]>([]);
+  const [axisRows, setAxisRows] = useState<DayAxisRow[]>([]);
+  const [layoutBounds, setLayoutBounds] = useState<DayTimelineBounds | null>(null);
+  const [layoutMetrics] = useState<DayTimelineLayouterConfig>(dayLayouterRef.current.getMetrics());
+  const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [is3DMode, setIs3DMode] = useState(true);
   const [isLODEnabled, setIsLODEnabled] = useState(true);
   const [isKioskModeEnabled, setIsKioskModeEnabled] = useState(true);
+  const [isHighResEnabled, setIsHighResEnabled] = useState(false);
+  const [isSnapToContentEnabled, setIsSnapToContentEnabled] = useState(true); // F5 toggle
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Click detection refs (to distinguish clicks from drags)
   const mouseDownPosRef = useRef<{ x: number; y: number; button: number } | null>(null);
@@ -78,19 +60,36 @@ function App() {
   const { getImage, loadHighResImage, preloadImages } = useImageCache();
   const { updateLODState } = useLODTransitions();
 
+  useEffect(() => {
+    rendererRef.current = new EventCanvasRenderer({
+      padding: PADDING,
+      imageLODThreshold: IMAGE_LOD_THRESHOLD,
+      getImage,
+      loadHighResImage,
+      updateLODState,
+      enableHighResFetch: isHighResEnabled,
+    });
+  }, [getImage, loadHighResImage, updateLODState, isHighResEnabled]);
+
   // Manual mode hook
   const { isManualMode, handleCanvasClick, handleCanvasRightClick, handleManualInteraction } = useManualMode({
     viewport: viewportRef.current,
-    events,
+    events: positionedEvents,
     canvasWidth: window.innerWidth,
     canvasHeight: window.innerHeight,
     isKioskModeEnabled,
   });
 
+  // Wrap manual interaction to also notify snap controller
+  const handleUserInteraction = () => {
+    handleManualInteraction();
+    snapControllerRef.current.notifyInteraction();
+  };
+
   // Kiosk mode hook
   const { kioskMode, articlesViewedCount } = useKioskMode({
     viewport: viewportRef.current,
-    events,
+    events: positionedEvents,
     canvasWidth: window.innerWidth,
     canvasHeight: window.innerHeight,
     isManualMode,
@@ -139,48 +138,98 @@ function App() {
     mouseDownPosRef.current = null;
   };
 
+  // Combined touch event handlers for mobile devices (click detection + manual interaction)
+  const handleTouchStart = (event: React.TouchEvent<HTMLCanvasElement>) => {
+    // Call manual interaction handler for kiosk mode + snap controller
+    handleUserInteraction();
+
+    // Click detection
+    if (event.touches.length === 1) {
+      const touch = event.touches[0];
+      mouseDownPosRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        button: 0, // Touch events behave like left clicks
+      };
+      console.log(`[ClickDetection] TouchStart at (${touch.clientX}, ${touch.clientY})`);
+    }
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!mouseDownPosRef.current) {
+      console.log('[ClickDetection] TouchEnd without TouchStart');
+      return;
+    }
+
+    if (event.changedTouches.length === 1) {
+      const touch = event.changedTouches[0];
+      const downPos = mouseDownPosRef.current;
+      const distance = Math.sqrt(
+        Math.pow(touch.clientX - downPos.x, 2) +
+        Math.pow(touch.clientY - downPos.y, 2)
+      );
+
+      console.log(`[ClickDetection] TouchEnd at (${touch.clientX}, ${touch.clientY}), distance: ${distance.toFixed(2)}px`);
+
+      // If touch didn't move much, treat it as a tap/click
+      if (distance < CLICK_THRESHOLD) {
+        console.log('[ClickDetection] Detected TAP');
+        // Create a synthetic event object for handleCanvasClick
+        const syntheticEvent = {
+          clientX: touch.clientX,
+          clientY: touch.clientY,
+        } as React.MouseEvent<HTMLCanvasElement>;
+        handleCanvasClick(syntheticEvent);
+      } else {
+        console.log(`[ClickDetection] Movement detected (${distance.toFixed(2)}px), ignoring as drag`);
+      }
+    }
+
+    mouseDownPosRef.current = null;
+  };
+
+  const handleEventSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const query = formData.get('eventId')?.toString().trim();
+    if (!query) return;
+
+    const match = layoutEngineRef.current
+      .all()
+      .find((node) => node.data.id.toLowerCase() === query.toLowerCase());
+
+    if (!match || !match.width.value || !match.height.value) {
+      console.log(`[Search] No event found with ID ${query}`);
+      return;
+    }
+
+    const centerX = (match.posX.value ?? 0) + (match.width.value ?? 0) / 2;
+    const centerY = (match.posY.value ?? 0) + (match.height.value ?? 0) / 2;
+    const canvasWidth = window.innerWidth;
+    const canvasHeight = window.innerHeight;
+    const targetScale = Math.min(
+      (canvasWidth * 0.8) / (match.width.value ?? 1),
+      (canvasHeight * 0.8) / (match.height.value ?? 1)
+    );
+
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.centerOn(centerX, centerY, targetScale);
+    event.currentTarget.reset();
+    searchInputRef.current?.blur();
+  };
+
   // Load events on mount
   useEffect(() => {
     async function loadEvents() {
       console.log('[App] Loading Koralmbahn events...');
-      const data = await fetchKoralmEvents(300);
+      const data = await fetchKoralmEvents(1000);
+      setEvents(data);
+      console.log(`[App] Loaded ${data.length} events`);
 
-      // Calculate optimal grid layout based on viewport size
-      const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
-      const gridLayout = calculateOptimalGrid(data.length, viewportWidth, viewportHeight);
+      await preloadImages(data);
 
-      console.log(`[App] Calculated grid: ${gridLayout.cols} cols × ${gridLayout.rows} rows, ` +
-                  `card size: ${gridLayout.cardWidth.toFixed(0)}×${gridLayout.cardHeight.toFixed(0)}`);
-
-      // Position events in a grid layout (full screen usage)
-      const positioned = data.map((event, index) => {
-        const col = index % gridLayout.cols;
-        const row = Math.floor(index / gridLayout.cols);
-        const cardStyle = 'v2'; // Use v2 style for all cards
-
-        // Use ProductFinder spacing formula
-        const x = col * (gridLayout.cardWidth + CARD_GAP);
-        const y = row * (gridLayout.cardHeight + CARD_GAP);
-
-        return {
-          ...event,
-          x,
-          y,
-          width: gridLayout.cardWidth,
-          height: gridLayout.cardHeight,
-          cardStyle,
-        };
-      });
-
-      setEvents(positioned as KoralmEvent[]);
-      console.log(`[App] Loaded ${positioned.length} events`);
-
-      // Preload low-res images using IndexedDB cache
-      await preloadImages(positioned as KoralmEvent[]);
-
-      // Generate QR codes for events
-      positioned.forEach(async (event) => {
+      data.forEach(async (event) => {
         try {
           const qrDataUrl = await QRCode.toDataURL(event.url, {
             width: 80,
@@ -194,7 +243,6 @@ function App() {
           const qrImg = new Image();
           qrImg.onload = () => {
             event.qrCode = qrImg;
-            console.log(`[App] QR code generated for event: ${event.id}`);
           };
           qrImg.src = qrDataUrl;
         } catch (error) {
@@ -205,6 +253,54 @@ function App() {
 
     loadEvents();
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const controller = viewportControllerRef.current;
+    const viewport = controller.init(canvas, isSnapToContentEnabled);
+    viewportRef.current = viewport;
+
+    return () => {
+      controller.destroy();
+      viewportRef.current = null;
+    };
+  }, [isSnapToContentEnabled]);
+
+  useEffect(() => {
+    viewportControllerRef.current.updateBounds(layoutBounds, positionedEvents);
+  }, [layoutBounds, positionedEvents]);
+
+  useEffect(() => {
+    const layoutEngine = layoutEngineRef.current;
+    layoutEngine.sync(events, (event) => event.id);
+    layoutEngine.layout(viewportSize);
+
+    const layouter = dayLayouterRef.current;
+    setAxisRows(layouter.getAxisRows());
+    const bounds = layouter.getContentBounds();
+    setLayoutBounds(bounds);
+
+    const nodes = layoutEngine.all();
+    const positioned = nodes.map((node) => ({
+      ...node.data,
+      x: node.posX.value ?? 0,
+      y: node.posY.value ?? 0,
+      width: node.width.value ?? 0,
+      height: node.height.value ?? 0,
+    }));
+    setPositionedEvents(positioned);
+  }, [events, viewportSize]);
 
   // F1/F2/F3 key toggles
   useEffect(() => {
@@ -230,6 +326,27 @@ function App() {
           return !prev;
         });
       }
+      if (event.key === 'F4') {
+        event.preventDefault();
+        setIsHighResEnabled((prev) => {
+          console.log(`[HighRes Toggle] High-Res Fetch ${!prev ? 'ENABLED' : 'DISABLED'}`);
+          return !prev;
+        });
+      }
+      if (event.key === 'F5') {
+        event.preventDefault();
+        setIsSnapToContentEnabled((prev) => {
+          console.log(`[Snap Toggle] Snap-to-Content ${!prev ? 'ENABLED' : 'DISABLED'}`);
+          return !prev;
+        });
+      }
+      if (event.key === 'f' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+          searchInputRef.current.select();
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -240,78 +357,17 @@ function App() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const viewport = viewportRef.current;
+    const renderer = rendererRef.current;
+    if (!canvas || !viewport || !renderer) return;
 
-    // Set canvas size
-    const updateCanvasSize = () => {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.scale(dpr, dpr);
-      }
-    };
+    const renderInterval = 1000 / RENDER_FPS;
+    const updateInterval = 1000 / UPDATE_FPS;
 
-    updateCanvasSize();
-    window.addEventListener('resize', updateCanvasSize);
-
-    // Initialize viewport transform (zoom/pan)
-    const viewport = new ViewportTransform(canvas);
-    viewportRef.current = viewport;
-
-    // Calculate content bounds based on actual event positions
-    let minX = 0, minY = 0, maxX = window.innerWidth, maxY = window.innerHeight;
-
-    if (events.length > 0) {
-      minX = Infinity;
-      minY = Infinity;
-      maxX = -Infinity;
-      maxY = -Infinity;
-
-      events.forEach(event => {
-        if (event.x !== undefined && event.y !== undefined && event.width && event.height) {
-          minX = Math.min(minX, event.x);
-          minY = Math.min(minY, event.y);
-          maxX = Math.max(maxX, event.x + event.width);
-          maxY = Math.max(maxY, event.y + event.height);
-        }
-      });
-
-      // Add small padding (just gap size) to prevent clipping
-      minX = Math.max(0, minX - CARD_GAP);
-      minY = Math.max(0, minY - CARD_GAP);
-      maxX += CARD_GAP;
-      maxY += CARD_GAP;
-    }
-
-    const contentWidth = maxX - minX;
-    const contentHeight = maxY - minY;
-
-    // Don't set maxItemHeight to allow extreme zoom levels (uses fallback: fitToContentScale * 200)
-    viewport.setContentBounds({
-      width: contentWidth,
-      height: contentHeight,
-      minX: minX,
-      minY: minY,
-      maxX: maxX,
-      maxY: maxY,
-    });
-
-    // Viewport culling is handled internally by the engine
-
-    // Game engine pattern: separate render and update loops
-    const renderInterval = 1000 / RENDER_FPS; // 16.67ms for 60 FPS
-    const updateInterval = 1000 / UPDATE_FPS; // 40ms for 25 FPS
-
-    // Animation loop with dual FPS (like professional game engines)
     const render = (currentTime: number) => {
-      if (!viewportRef.current) return;
-
-      // RENDER LOOP (60 FPS): Calculate render delta
       const renderDelta = currentTime - lastFrameTimeRef.current;
       if (renderDelta < renderInterval) {
         animationFrameRef.current = requestAnimationFrame(render);
@@ -319,265 +375,49 @@ function App() {
       }
       lastFrameTimeRef.current = currentTime - (renderDelta % renderInterval);
 
-      // UPDATE LOOP (25 FPS): Heavy operations (culling, LOD)
       const updateDelta = currentTime - lastUpdateTimeRef.current;
       const shouldUpdate = updateDelta >= updateInterval;
       if (shouldUpdate) {
         lastUpdateTimeRef.current = currentTime - (updateDelta % updateInterval);
       }
 
-      // Always update viewport (smooth interpolation at 60 FPS)
-      viewportRef.current.update();
+      viewport.update();
 
-      // Clear canvas
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      // Snap-to-Content: Auto-navigate to nearest content if user is idle and lost (F5 toggle)
+      if (isSnapToContentEnabled) {
+        snapControllerRef.current.update(
+          viewport,
+          positionedEvents,
+          axisRows,
+          window.innerWidth,
+          window.innerHeight
+        );
+      }
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Apply viewport transform
-      ctx.save();
-      viewportRef.current.applyTransform(ctx);
-
-      // Image LOD (Level of Detail) - always available for rendering
-      const currentScale = viewportRef.current.scale;
-      const useHighRes = currentScale >= IMAGE_LOD_THRESHOLD;
-
-      // Draw event cards
-      events.forEach((event) => {
-        if (!event.x || !event.y || !event.width || !event.height) return;
-
-        const { x, y, width, height } = event;
-
-        // Load high-res image ONLY for visible events when zoomed in
-        // Skip if this URL has already failed to load
-        if (useHighRes && event.imageUrl && !failedImagesRef.current.has(event.imageUrl)) {
-          // Detect existing format from URL to preserve it (important for SVG->PNG conversions)
-          const urlObj = new URL(event.imageUrl);
-          const existingFormat = urlObj.searchParams.get('format');
-
-          // Build high-res config that respects existing format
-          const highResConfig = {
-            width: 800,
-            format: existingFormat || 'jpg', // Keep existing format (png for SVGs, jpg otherwise)
-            quality: 90,
-          };
-
-          loadHighResImage(event.imageUrl, highResConfig).then((img) => {
-            if (!img) {
-              // Remember failed loads to prevent repeated 404 requests every frame
-              failedImagesRef.current.add(event.imageUrl!);
-              console.log(`[ImageCache] Marking ${event.imageUrl} as failed - will not retry`);
-            }
-          });
-        }
-
-        // Calculate screen-space size for card LOD and update transition state
-        const screenCardWidth = width * currentScale;
-        const transitionState = isLODEnabled
-          ? updateLODState(event.id, screenCardWidth)
-          : { imageHeightPercent: 1.0, textOpacity: 1.0 };
-
-        // Get image based on LOD
-        const img = event.imageUrl ? getImage(event.imageUrl, useHighRes) : null;
-
-        // ===== UNIFIED RENDERING WITH INTERPOLATED TRANSITIONS =====
-        // Always render card background and border
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x - 5, y - 5, width + 10, height + 10);
-        ctx.clip();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-        ctx.shadowBlur = 10;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 2;
-        ctx.fillRect(x, y, width, height);
-
-        ctx.restore();
-
-        ctx.strokeStyle = '#e0e0e0';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x, y, width, height);
-
-        // Draw image with interpolated height
-        const imageX = x;
-        const imageY = y;
-        const imageWidth = width;
-        const imageHeight = Math.floor(height * transitionState.imageHeightPercent);
-
-        if (img && img.complete) {
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(imageX, imageY, imageWidth, imageHeight);
-          ctx.clip();
-
-          // Calculate aspect ratio fit (cover mode)
-          const imgAspect = img.width / img.height;
-          const targetAspect = imageWidth / imageHeight;
-          let drawWidth = imageWidth;
-          let drawHeight = imageHeight;
-          let offsetX = 0;
-          let offsetY = 0;
-
-          if (imgAspect > targetAspect) {
-            drawHeight = imageHeight;
-            drawWidth = imageHeight * imgAspect;
-            offsetX = -(drawWidth - imageWidth) / 2;
-          } else {
-            drawWidth = imageWidth;
-            drawHeight = imageWidth / imgAspect;
-            offsetY = -(drawHeight - imageHeight) / 2;
-          }
-
-          ctx.drawImage(img, imageX + offsetX, imageY + offsetY, drawWidth, drawHeight);
-          ctx.restore();
-        } else {
-          ctx.fillStyle = '#e0e0e0';
-          ctx.fillRect(imageX, imageY, imageWidth, imageHeight);
-        }
-
-        // Render text with interpolated opacity (only if opacity > 0.01)
-        if (transitionState.textOpacity > 0.01) {
-          ctx.globalAlpha = transitionState.textOpacity;
-
-          // Text rendering below image (V2 style layout)
-          const textStartY = imageY + imageHeight + PADDING;
-          const textStartX = x + PADDING;
-          const textWidth = width - PADDING * 2;
-
-          // Title
-          ctx.fillStyle = '#1a1a1a';
-          ctx.font = 'bold 13px sans-serif';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          const titleLines = wrapText(ctx, event.title, textWidth, 13);
-          const maxTitleLines = Math.min(2, titleLines.length);
-          let textY = textStartY;
-          titleLines.slice(0, maxTitleLines).forEach((line, i) => {
-            ctx.fillText(line, textStartX, textY + i * 16);
-          });
-          textY += maxTitleLines * 16 + 6;
-
-          // Subtitle
-          if (event.subtitle || event.sourceName) {
-            ctx.fillStyle = '#666';
-            ctx.font = '10px sans-serif';
-            const subtitleText = event.subtitle || event.sourceName || '';
-            const subtitleLines = wrapText(ctx, subtitleText, textWidth, 10);
-            if (subtitleLines.length > 0) {
-              ctx.fillText(subtitleLines[0], textStartX, textY);
-              textY += 14;
-            }
-          }
-
-          // Summary (with ellipsis if needed)
-          ctx.fillStyle = '#444';
-          ctx.font = '11px sans-serif';
-          const summaryLines = wrapText(ctx, event.summary, textWidth, 11);
-          const maxSummaryLines = 3;
-          summaryLines.slice(0, maxSummaryLines).forEach((line, i) => {
-            const displayLine =
-              i === maxSummaryLines - 1 && summaryLines.length > maxSummaryLines
-                ? line + '...'
-                : line;
-            ctx.fillText(displayLine, textStartX, textY + i * 14);
-          });
-          textY += maxSummaryLines * 14 + 8;
-
-          // Event ID & URL (Developer info)
-          ctx.fillStyle = '#999';
-          ctx.font = '9px monospace';
-          ctx.fillText(`ID: ${event.id}`, textStartX, textY);
-          textY += 12;
-
-          // URL (truncated if too long)
-          const maxUrlWidth = textWidth;
-          let displayUrl = event.url;
-          if (ctx.measureText(displayUrl).width > maxUrlWidth) {
-            // Truncate URL from middle
-            const urlParts = displayUrl.split('/');
-            displayUrl = urlParts[0] + '//' + urlParts[2] + '/.../' + urlParts[urlParts.length - 1];
-            if (ctx.measureText(displayUrl).width > maxUrlWidth) {
-              displayUrl = displayUrl.substring(0, 30) + '...';
-            }
-          }
-          ctx.fillStyle = '#0066cc';
-          ctx.fillText(displayUrl, textStartX, textY);
-
-          // QR Code (fades with text, in bottom right corner)
-          if (event.qrCode && event.qrCode.complete) {
-            const qrSize = 60;
-            const qrX = x + width - qrSize - 8;
-            const qrY = y + height - qrSize - 8;
-
-            ctx.save();
-            ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-            ctx.shadowBlur = 4;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 2;
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(qrX - 4, qrY - 4, qrSize + 8, qrSize + 8);
-            ctx.restore();
-
-            ctx.drawImage(event.qrCode, qrX, qrY, qrSize, qrSize);
-          }
-
-          // Reset global alpha
-          ctx.globalAlpha = 1.0;
-        }
+      const nodes = layoutEngineRef.current.all();
+      renderer.renderFrame({
+        ctx,
+        viewport,
+        nodes,
+        axisRows,
+        metrics: layoutMetrics,
+        bounds: layoutBounds,
+        kioskMode,
+        articlesViewedCount,
+        isLODEnabled,
+        isKioskModeEnabled,
+        is3DMode,
+        failedImages: failedImagesRef.current,
+        renderDelta,
+        updateDelta,
+        isHighResEnabled,
       });
-
-      ctx.restore();
-
-      // Draw UI overlay (not affected by viewport transform)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-      ctx.fillRect(10, 10, 450, 130);
-      ctx.fillStyle = '#fff';
-      ctx.font = '14px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('Koralmbahn Events Canvas', 20, 30);
-      const modeText = kioskMode === 'overview'
-        ? 'Overview'
-        : `Article ${articlesViewedCount}/5`;
-      ctx.fillText(
-        `Events: ${events.length} | Mode: ${modeText} | Image: ${useHighRes ? 'HIGH-RES' : 'THUMBNAIL'}`,
-        20,
-        50
-      );
-      ctx.fillText(
-        `Zoom: ${(viewportRef.current.scale * 100).toFixed(0)}% | Pan: ${Math.round(viewportRef.current.offset.x)}, ${Math.round(viewportRef.current.offset.y)}`,
-        20,
-        70
-      );
-      const actualRenderFPS = renderDelta > 0 ? Math.round(1000 / renderDelta) : 0;
-      const actualUpdateFPS = updateDelta > 0 ? Math.round(1000 / updateDelta) : 0;
-      ctx.fillText(
-        `Render: ${actualRenderFPS}/${RENDER_FPS} FPS | Update: ${actualUpdateFPS}/${UPDATE_FPS} FPS | Frame: ${renderDelta.toFixed(1)}ms`,
-        20,
-        90
-      );
-      ctx.fillText(
-        'Mouse wheel = zoom | Right-click drag = pan',
-        20,
-        110
-      );
-
-      // F-key controls
-      ctx.fillText(
-        `F1: ${is3DMode ? '3D Mode' : '2D Mode'} | F2: LOD ${isLODEnabled ? 'ON' : 'OFF'} | F3: Kiosk ${isKioskModeEnabled ? 'ON' : 'OFF'}`,
-        20,
-        150
-      );
 
       animationFrameRef.current = requestAnimationFrame(render);
     };
 
-    // Start render loop
     animationFrameRef.current = requestAnimationFrame(render);
 
-    // Simulate loading
     setTimeout(() => {
       setIsLoading(false);
     }, 1000);
@@ -586,13 +426,50 @@ function App() {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
-      viewport.destroy();
-      window.removeEventListener('resize', updateCanvasSize);
     };
-  }, [events]);
+  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, isSnapToContentEnabled, positionedEvents]);
 
   return (
     <div className="app-container">
+      {/* Debug Panel */}
+      <div style={{
+        position: 'fixed',
+        top: '10px',
+        left: '10px',
+        background: 'rgba(0, 0, 0, 0.8)',
+        color: '#fff',
+        padding: '12px 16px',
+        borderRadius: '8px',
+        fontFamily: 'monospace',
+        fontSize: '12px',
+        lineHeight: '1.6',
+        zIndex: 9999,
+        pointerEvents: 'none',
+      }}>
+        <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '13px' }}>Debug Panel</div>
+        <div>F1: 3D Mode {is3DMode ? '✅' : '❌'}</div>
+        <div>F2: LOD {isLODEnabled ? '✅' : '❌'}</div>
+        <div>F3: Kiosk {isKioskModeEnabled ? '✅' : '❌'}</div>
+        <div>F4: High-Res {isHighResEnabled ? '✅' : '❌'}</div>
+        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
+          <div style={{ fontWeight: 'bold' }}>F5: {isSnapToContentEnabled ? '✅ Snap-to-Content' : '❌ Classic Bounds'}</div>
+          <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
+            {isSnapToContentEnabled
+              ? '• Große Bounds + Auto-Snap'
+              : '• Enge Bounds + Rubberband'}
+          </div>
+        </div>
+      </div>
+
+      <form className="event-search" onSubmit={handleEventSearch}>
+        <input
+          ref={searchInputRef}
+          type="text"
+          name="eventId"
+          placeholder="Event ID eingeben…"
+          autoComplete="off"
+        />
+      </form>
       {isLoading && (
         <div className="loader">
           <div className="spinner"></div>
@@ -604,9 +481,10 @@ function App() {
         className="main-canvas"
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         onContextMenu={(e) => e.preventDefault()}
-        onWheel={handleManualInteraction}
-        onTouchStart={handleManualInteraction}
+        onWheel={handleUserInteraction}
         style={{
           display: 'block',
           width: '100vw',
@@ -620,36 +498,6 @@ function App() {
       />
     </div>
   );
-}
-
-// Helper function to wrap text
-function wrapText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-  _fontSize: number
-): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
-
-  words.forEach((word) => {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
-  });
-
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-
-  return lines;
 }
 
 export default App;
