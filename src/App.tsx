@@ -42,10 +42,10 @@ function App() {
   const [layoutBounds, setLayoutBounds] = useState<DayTimelineBounds | null>(null);
   const [layoutMetrics] = useState<DayTimelineLayouterConfig>(dayLayouterRef.current.getMetrics());
   const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-  const [is3DMode, setIs3DMode] = useState(true);
+  const [is3DMode, setIs3DMode] = useState(false); // F1: 3D Mode (Default: OFF)
   const [isLODEnabled, setIsLODEnabled] = useState(true);
-  const [isKioskModeEnabled, setIsKioskModeEnabled] = useState(true);
-  const [isHighResEnabled, setIsHighResEnabled] = useState(false);
+  const [isKioskModeEnabled, setIsKioskModeEnabled] = useState(false); // F3: Kiosk Mode (Default: OFF)
+  const [isHighResEnabled, setIsHighResEnabled] = useState(true); // F4: HighRes (Default: ON)
   const [isSnapToContentEnabled, setIsSnapToContentEnabled] = useState(true); // F5 toggle
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
