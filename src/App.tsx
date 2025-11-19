@@ -17,7 +17,7 @@ import { EventCanvasRenderer } from './render/EventCanvasRenderer';
 import { CanvasViewportController } from './viewport/CanvasViewportController';
 import { SnapToContentController } from './viewport/SnapToContentController';
 import { ElectricBorder } from './effects/ElectricBorder/ElectricBorder';
-import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
+// import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
 
 const PADDING = 15;
 
@@ -521,10 +521,8 @@ function App() {
         </div>
       </div>
 
-      {showSciFiDashboard ? (
-        <SciFiDashboard />
-      ) : (
-        <>
+      {/* Temporarily disabled: showSciFiDashboard */}
+      <>
           <form className="event-search" onSubmit={handleEventSearch}>
             <input
               ref={searchInputRef}
@@ -598,7 +596,6 @@ function App() {
             </div>
           </div>
         </>
-      )}
     </div>
   );
 }
