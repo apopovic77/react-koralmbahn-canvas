@@ -14,6 +14,7 @@ import { DayTimelineLayouter, type DayAxisRow, type DayTimelineBounds, type DayT
 import { EventCanvasRenderer } from './render/EventCanvasRenderer';
 import { CanvasViewportController } from './viewport/CanvasViewportController';
 import { SnapToContentController } from './viewport/SnapToContentController';
+import { ElectricBorder } from './effects/ElectricBorder/ElectricBorder';
 
 const PADDING = 15;
 
@@ -48,6 +49,9 @@ function App() {
   const [isHighResEnabled, setIsHighResEnabled] = useState(true); // F4: HighRes (Default: ON)
   const [isSnapToContentEnabled, setIsSnapToContentEnabled] = useState(true); // F5 toggle
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const selectedEventOverlayRef = useRef<HTMLDivElement>(null);
 
   // Click detection refs (to distinguish clicks from drags)
   const mouseDownPosRef = useRef<{ x: number; y: number; button: number } | null>(null);
@@ -78,6 +82,7 @@ function App() {
     canvasWidth: window.innerWidth,
     canvasHeight: window.innerHeight,
     isKioskModeEnabled,
+    onEventSelected: (event) => setSelectedEventId(event?.id || null),
   });
 
   // Wrap manual interaction to also notify snap controller
@@ -215,6 +220,10 @@ function App() {
     const viewport = viewportRef.current;
     if (!viewport) return;
     viewport.centerOn(centerX, centerY, targetScale);
+    
+    // Also select it
+    setSelectedEventId(match.data.id);
+    
     event.currentTarget.reset();
     searchInputRef.current?.blur();
   };
@@ -413,6 +422,32 @@ function App() {
         isHighResEnabled,
       });
 
+      // Update selection overlay position
+      if (selectedEventId && selectedEventOverlayRef.current && positionedEvents.length > 0) {
+        const event = positionedEvents.find(e => e.id === selectedEventId);
+        if (event && event.width && event.height) {
+          // viewport.scale and offset are available on the viewport object
+          const scale = viewport.scale;
+          const offsetX = viewport.offset.x;
+          const offsetY = viewport.offset.y;
+          
+          const screenX = (event.x || 0) * scale + offsetX;
+          const screenY = (event.y || 0) * scale + offsetY;
+          const screenWidth = event.width * scale;
+          const screenHeight = event.height * scale;
+
+          const el = selectedEventOverlayRef.current;
+          el.style.transform = `translate(${screenX}px, ${screenY}px)`;
+          el.style.width = `${screenWidth}px`;
+          el.style.height = `${screenHeight}px`;
+          el.style.display = 'block';
+        } else {
+          if (selectedEventOverlayRef.current) selectedEventOverlayRef.current.style.display = 'none';
+        }
+      } else if (selectedEventOverlayRef.current) {
+        selectedEventOverlayRef.current.style.display = 'none';
+      }
+
       animationFrameRef.current = requestAnimationFrame(render);
     };
 
@@ -427,7 +462,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, isSnapToContentEnabled, positionedEvents]);
+  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, isSnapToContentEnabled, positionedEvents, selectedEventId]);
 
   return (
     <div className="app-container">
@@ -476,26 +511,63 @@ function App() {
           <p>Loading Koralmbahn Events...</p>
         </div>
       )}
-      <canvas
-        ref={canvasRef}
-        className="main-canvas"
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onContextMenu={(e) => e.preventDefault()}
-        onWheel={handleUserInteraction}
+      
+      {/* Scene Container to wrap Canvas and Overlay with same 3D transform */}
+      <div 
+        className="scene-wrapper"
         style={{
           display: 'block',
           width: '100vw',
           height: '100vh',
-          background: '#f5f5f5',
           transform: is3DMode ? 'perspective(1200px) rotateX(8deg) rotateY(-3deg)' : 'none',
           transformStyle: is3DMode ? 'preserve-3d' : 'flat',
-          cursor: 'pointer',
           transition: 'transform 0.3s ease-out',
+          position: 'relative',
+          overflow: 'hidden', // Clip anything outside
         }}
-      />
+      >
+        <canvas
+          ref={canvasRef}
+          className="main-canvas"
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onContextMenu={(e) => e.preventDefault()}
+          onWheel={handleUserInteraction}
+          style={{
+            display: 'block',
+            width: '100vw',
+            height: '100vh',
+            background: '#f5f5f5',
+            // Canvas sits at 0,0
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            cursor: 'pointer',
+          }}
+        />
+        
+        {/* Overlay for ElectricBorder */}
+        <div
+          ref={selectedEventOverlayRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            display: 'none',
+            zIndex: 10,
+            // We do NOT apply the 3D transform here again, because we are inside the transformed wrapper
+            // However, the canvas uses 100vw/100vh and transforms.
+            // If we position absolutely inside the wrapper, we are in the same coordinate space as the canvas *element*.
+            // The canvas content is drawn in 2D, but the whole plane is rotated.
+            // So our 2D translation on the overlay should match the 2D content on the canvas surface.
+          }}
+        >
+          <ElectricBorder />
+        </div>
+      </div>
     </div>
   );
 }

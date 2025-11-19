@@ -120,7 +120,6 @@ export function useManualMode({
         onManualModeStart();
       }
 
-      // Notify selection
       if (onEventSelected) {
         onEventSelected(clickedEvent);
       }
