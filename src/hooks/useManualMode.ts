@@ -8,6 +8,7 @@ interface UseManualModeOptions {
   canvasWidth: number;
   canvasHeight: number;
   onManualModeStart?: () => void;
+  onEventSelected?: (event: KoralmEvent | null) => void;
   inactivityTimeout?: number;
   transitionSpeed?: number;
   isKioskModeEnabled?: boolean;
@@ -29,6 +30,7 @@ export function useManualMode({
   canvasWidth,
   canvasHeight,
   onManualModeStart,
+  onEventSelected,
   inactivityTimeout = DEFAULT_INACTIVITY_TIMEOUT,
   transitionSpeed: _transitionSpeed = DEFAULT_TRANSITION_SPEED,
   isKioskModeEnabled = true,
@@ -116,6 +118,10 @@ export function useManualMode({
       // Notify parent (to stop kiosk timer)
       if (onManualModeStart) {
         onManualModeStart();
+      }
+
+      if (onEventSelected) {
+        onEventSelected(clickedEvent);
       }
 
       // Zoom to event (center and fill ~80% of viewport)
