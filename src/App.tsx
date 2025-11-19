@@ -392,16 +392,16 @@ function App() {
 
       viewport.update();
 
-      // Snap-to-Content: Auto-navigate to nearest content if user is idle and lost (F5 toggle)
-      if (isSnapToContentEnabled) {
-        snapControllerRef.current.update(
-          viewport,
-          positionedEvents,
-          axisRows,
-          window.innerWidth,
-          window.innerHeight
-        );
-      }
+      // Snap-to-Content: DISABLED - No auto-navigation
+      // if (isSnapToContentEnabled) {
+      //   snapControllerRef.current.update(
+      //     viewport,
+      //     positionedEvents,
+      //     axisRows,
+      //     window.innerWidth,
+      //     window.innerHeight
+      //   );
+      // }
 
       const nodes = layoutEngineRef.current.all();
       renderer.renderFrame({
