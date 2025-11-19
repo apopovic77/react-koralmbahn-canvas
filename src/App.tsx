@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
-import { ViewportTransform, useLODTransitions } from 'arkturian-canvas-engine';
+import { ViewportTransform, useLODTransitions, RectBoundsStrategy, NoBoundsStrategy } from 'arkturian-canvas-engine';
 import { LayoutEngine } from 'arkturian-canvas-engine/src/layout/LayoutEngine';
+
+type ViewportMode = 'rectBounds' | 'snapToContent' | 'off';
 
 import { fetchKoralmEvents } from './api/koralmbahnApi';
 import type { KoralmEvent } from './types/koralmbahn';
@@ -15,6 +17,7 @@ import { EventCanvasRenderer } from './render/EventCanvasRenderer';
 import { CanvasViewportController } from './viewport/CanvasViewportController';
 import { SnapToContentController } from './viewport/SnapToContentController';
 import { ElectricBorder } from './effects/ElectricBorder/ElectricBorder';
+import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
 
 const PADDING = 15;
 
@@ -47,7 +50,8 @@ function App() {
   const [isLODEnabled, setIsLODEnabled] = useState(true);
   const [isKioskModeEnabled, setIsKioskModeEnabled] = useState(false); // F3: Kiosk Mode (Default: OFF)
   const [isHighResEnabled, setIsHighResEnabled] = useState(true); // F4: HighRes (Default: ON)
-  const [isSnapToContentEnabled, setIsSnapToContentEnabled] = useState(true); // F5 toggle
+  const [showSciFiDashboard, setShowSciFiDashboard] = useState(false); // F6 toggle
+  const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -280,11 +284,20 @@ function App() {
     const viewport = controller.init(canvas);
     viewportRef.current = viewport;
 
+    // Apply border check strategy based on viewport mode
+    if (viewportMode === 'rectBounds') {
+      viewport.setBorderCheckStrategy(new RectBoundsStrategy());
+      console.log('[ViewportMode] Applied RectBoundsStrategy (rubber banding)');
+    } else {
+      viewport.setBorderCheckStrategy(new NoBoundsStrategy());
+      console.log('[ViewportMode] Applied NoBoundsStrategy (free panning)');
+    }
+
     return () => {
       controller.destroy();
       viewportRef.current = null;
     };
-  }, [isSnapToContentEnabled]);
+  }, [viewportMode]);
 
   useEffect(() => {
     viewportControllerRef.current.updateBounds(layoutBounds, positionedEvents);
@@ -342,11 +355,22 @@ function App() {
           return !prev;
         });
       }
-      if (event.key === 'F5') {
+      if (event.key === 'F6') {
         event.preventDefault();
-        setIsSnapToContentEnabled((prev) => {
-          console.log(`[Snap Toggle] Snap-to-Content ${!prev ? 'ENABLED' : 'DISABLED'}`);
+        setShowSciFiDashboard((prev) => {
+          console.log(`[SciFi Toggle] Dashboard ${!prev ? 'ENABLED' : 'DISABLED'}`);
           return !prev;
+        });
+      }
+      if (event.key === 'F7') {
+        event.preventDefault();
+        setViewportMode((prev) => {
+          const modes: ViewportMode[] = ['off', 'rectBounds', 'snapToContent'];
+          const currentIndex = modes.indexOf(prev);
+          const nextIndex = (currentIndex + 1) % modes.length;
+          const nextMode = modes[nextIndex];
+          console.log(`[Viewport Mode] Switching to: ${nextMode}`);
+          return nextMode;
         });
       }
       if (event.key === 'f' && (event.ctrlKey || event.metaKey)) {
@@ -392,16 +416,16 @@ function App() {
 
       viewport.update();
 
-      // Snap-to-Content: DISABLED - No auto-navigation
-      // if (isSnapToContentEnabled) {
-      //   snapControllerRef.current.update(
-      //     viewport,
-      //     positionedEvents,
-      //     axisRows,
-      //     window.innerWidth,
-      //     window.innerHeight
-      //   );
-      // }
+      // Snap-to-Content: Only active in 'snapToContent' mode
+      if (viewportMode === 'snapToContent') {
+        snapControllerRef.current.update(
+          viewport,
+          positionedEvents,
+          axisRows,
+          window.innerWidth,
+          window.innerHeight
+        );
+      }
 
       const nodes = layoutEngineRef.current.all();
       renderer.renderFrame({
@@ -462,7 +486,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, isSnapToContentEnabled, positionedEvents, selectedEventId]);
+  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, selectedEventId]);
 
   return (
     <div className="app-container">
@@ -486,88 +510,95 @@ function App() {
         <div>F2: LOD {isLODEnabled ? '✅' : '❌'}</div>
         <div>F3: Kiosk {isKioskModeEnabled ? '✅' : '❌'}</div>
         <div>F4: High-Res {isHighResEnabled ? '✅' : '❌'}</div>
+        <div>F6: SciFi Dashboard {showSciFiDashboard ? '✅' : '❌'}</div>
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
-          <div style={{ fontWeight: 'bold' }}>F5: {isSnapToContentEnabled ? '✅ Snap-to-Content' : '❌ Classic Bounds'}</div>
+          <div style={{ fontWeight: 'bold' }}>F7: Viewport Mode</div>
           <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
-            {isSnapToContentEnabled
-              ? '• Große Bounds + Auto-Snap'
-              : '• Enge Bounds + Rubberband'}
+            {viewportMode === 'off' && '❌ Off (Free Panning)'}
+            {viewportMode === 'rectBounds' && '✅ Rect Bounds (Rubber Band)'}
+            {viewportMode === 'snapToContent' && '✅ Snap-to-Content (Auto-Nav)'}
           </div>
         </div>
       </div>
 
-      <form className="event-search" onSubmit={handleEventSearch}>
-        <input
-          ref={searchInputRef}
-          type="text"
-          name="eventId"
-          placeholder="Event ID eingeben…"
-          autoComplete="off"
-        />
-      </form>
-      {isLoading && (
-        <div className="loader">
-          <div className="spinner"></div>
-          <p>Loading Koralmbahn Events...</p>
-        </div>
+      {showSciFiDashboard ? (
+        <SciFiDashboard />
+      ) : (
+        <>
+          <form className="event-search" onSubmit={handleEventSearch}>
+            <input
+              ref={searchInputRef}
+              type="text"
+              name="eventId"
+              placeholder="Event ID eingeben…"
+              autoComplete="off"
+            />
+          </form>
+          {isLoading && (
+            <div className="loader">
+              <div className="spinner"></div>
+              <p>Loading Koralmbahn Events...</p>
+            </div>
+          )}
+          
+          {/* Scene Container to wrap Canvas and Overlay with same 3D transform */}
+          <div 
+            className="scene-wrapper"
+            style={{
+              display: 'block',
+              width: '100vw',
+              height: '100vh',
+              transform: is3DMode ? 'perspective(1200px) rotateX(8deg) rotateY(-3deg)' : 'none',
+              transformStyle: is3DMode ? 'preserve-3d' : 'flat',
+              transition: 'transform 0.3s ease-out',
+              position: 'relative',
+              overflow: 'hidden', // Clip anything outside
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              className="main-canvas"
+              onMouseDown={handleMouseDown}
+              onMouseUp={handleMouseUp}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onContextMenu={(e) => e.preventDefault()}
+              onWheel={handleUserInteraction}
+              style={{
+                display: 'block',
+                width: '100vw',
+                height: '100vh',
+                background: '#f5f5f5',
+                // Canvas sits at 0,0
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                cursor: 'pointer',
+              }}
+            />
+            
+            {/* Overlay for ElectricBorder */}
+            <div
+              ref={selectedEventOverlayRef}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                pointerEvents: 'none',
+                display: 'none',
+                zIndex: 10,
+                // We do NOT apply the 3D transform here again, because we are inside the transformed wrapper
+                // However, the canvas uses 100vw/100vh and transforms.
+                // If we position absolutely inside the wrapper, we are in the same coordinate space as the canvas *element*.
+                // The canvas content is drawn in 2D, but the whole plane is rotated.
+                // So our 2D translation on the overlay should match the 2D content on the canvas surface.
+              }}
+            >
+              <ElectricBorder />
+            </div>
+          </div>
+        </>
       )}
-      
-      {/* Scene Container to wrap Canvas and Overlay with same 3D transform */}
-      <div 
-        className="scene-wrapper"
-        style={{
-          display: 'block',
-          width: '100vw',
-          height: '100vh',
-          transform: is3DMode ? 'perspective(1200px) rotateX(8deg) rotateY(-3deg)' : 'none',
-          transformStyle: is3DMode ? 'preserve-3d' : 'flat',
-          transition: 'transform 0.3s ease-out',
-          position: 'relative',
-          overflow: 'hidden', // Clip anything outside
-        }}
-      >
-        <canvas
-          ref={canvasRef}
-          className="main-canvas"
-          onMouseDown={handleMouseDown}
-          onMouseUp={handleMouseUp}
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-          onContextMenu={(e) => e.preventDefault()}
-          onWheel={handleUserInteraction}
-          style={{
-            display: 'block',
-            width: '100vw',
-            height: '100vh',
-            background: '#f5f5f5',
-            // Canvas sits at 0,0
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            cursor: 'pointer',
-          }}
-        />
-        
-        {/* Overlay for ElectricBorder */}
-        <div
-          ref={selectedEventOverlayRef}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            pointerEvents: 'none',
-            display: 'none',
-            zIndex: 10,
-            // We do NOT apply the 3D transform here again, because we are inside the transformed wrapper
-            // However, the canvas uses 100vw/100vh and transforms.
-            // If we position absolutely inside the wrapper, we are in the same coordinate space as the canvas *element*.
-            // The canvas content is drawn in 2D, but the whole plane is rotated.
-            // So our 2D translation on the overlay should match the 2D content on the canvas surface.
-          }}
-        >
-          <ElectricBorder />
-        </div>
-      </div>
     </div>
   );
 }
