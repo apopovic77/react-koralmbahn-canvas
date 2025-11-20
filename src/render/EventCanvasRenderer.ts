@@ -30,6 +30,7 @@ interface RenderFrameParams {
   failedImages: Set<string>;
   renderDelta: number;
   updateDelta: number;
+  layoutMode: 'dayTimeline' | 'singleRow';
 }
 
 export class EventCanvasRenderer {
@@ -57,6 +58,7 @@ export class EventCanvasRenderer {
       failedImages,
       renderDelta,
       updateDelta,
+      layoutMode,
     } = params;
 
     const currentScale = viewport.scale;
@@ -67,7 +69,16 @@ export class EventCanvasRenderer {
     ctx.save();
     viewport.applyTransform(ctx);
 
-    this.drawAxis(ctx, axisRows, metrics, bounds);
+    // Render axis only in dayTimeline mode
+    if (layoutMode === 'dayTimeline') {
+      this.drawAxis(ctx, axisRows, metrics, bounds);
+    }
+
+    // Render date headers in singleRow mode
+    if (layoutMode === 'singleRow') {
+      this.drawSingleRowDateHeaders(ctx, nodes);
+    }
+
     this.drawEvents(ctx, {
       nodes,
       currentScale,
@@ -128,6 +139,49 @@ export class EventCanvasRenderer {
     });
   }
 
+  private drawSingleRowDateHeaders(ctx: CanvasRenderingContext2D, nodes: LayoutNode<KoralmEvent>[]): void {
+    nodes.forEach((node) => {
+      const event = node.data;
+      const x = node.posX.value ?? 0;
+      const y = node.posY.value ?? 0;
+      const width = node.width.value ?? 0;
+
+      if (!width || !event.publishedAt) return;
+
+      // Format date
+      const date = new Date(event.publishedAt);
+      if (Number.isNaN(date.getTime())) return;
+
+      const formatter = new Intl.DateTimeFormat('de-AT', {
+        weekday: 'short',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+
+      const dateLabel = formatter.format(date);
+      const headerHeight = 30;
+      const headerY = y - headerHeight - 5;
+
+      // Save canvas state before modifying it
+      ctx.save();
+
+      // Draw header background
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(x, headerY, width, headerHeight);
+
+      // Draw date text
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'bold 14px "Bricolage Grotesque", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dateLabel, x + width / 2, headerY + headerHeight / 2);
+
+      // Restore canvas state
+      ctx.restore();
+    });
+  }
+
   private drawEvents(
     ctx: CanvasRenderingContext2D,
     params: {
@@ -182,8 +236,15 @@ export class EventCanvasRenderer {
         this.highResInFlight.add(event.imageUrl);
         const urlObj = new URL(event.imageUrl);
         const existingFormat = urlObj.searchParams.get('format');
+
+        // Detect Playwright screenshots: use 2000px for better text clarity
+        // Regular images: use 1200px
+        const isPlaywrightScreenshot = event.imageUrl.toLowerCase().includes('playwright') ||
+                                      event.imageUrl.toLowerCase().includes('screenshot');
+        const targetWidth = isPlaywrightScreenshot ? 2000 : 1200;
+
         const highResConfig: HighResImageConfig = {
-          width: 800,
+          width: targetWidth,
           format: existingFormat || 'jpg',
           quality: 90,
         };

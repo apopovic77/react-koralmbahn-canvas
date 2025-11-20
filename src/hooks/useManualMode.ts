@@ -176,7 +176,25 @@ export function useManualMode({
 
       // Open article URL in new tab
       if (clickedEvent.url) {
-        window.open(clickedEvent.url, '_blank', 'noopener,noreferrer');
+        // Fix malformed URLs (e.g., https://http://... or https://http%3A%2F%2F...)
+        let url = clickedEvent.url;
+
+        // Check if URL contains double protocol
+        if (url.match(/^https?:\/\/https?(:|\%3A)/i)) {
+          // Extract the inner URL (after the first protocol)
+          const match = url.match(/^https?:\/\/(.+)$/i);
+          if (match) {
+            // Decode URL-encoded characters and extract the actual URL
+            url = decodeURIComponent(match[1]);
+            // Ensure it starts with a protocol
+            if (!url.match(/^https?:\/\//i)) {
+              url = 'https://' + url;
+            }
+          }
+        }
+
+        console.log(`[ManualMode] Opening URL: ${url}`);
+        window.open(url, '_blank', 'noopener,noreferrer');
       }
     }
   };

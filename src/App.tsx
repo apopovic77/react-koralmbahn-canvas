@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
-import { ViewportTransform, useLODTransitions, RectBoundsStrategy, NoBoundsStrategy } from 'arkturian-canvas-engine';
+import { ViewportTransform, useLODTransitions } from 'arkturian-canvas-engine';
 import { LayoutEngine } from 'arkturian-canvas-engine/src/layout/LayoutEngine';
-
-type ViewportMode = 'rectBounds' | 'snapToContent' | 'off';
 
 import { fetchKoralmEvents } from './api/koralmbahnApi';
 import type { KoralmEvent } from './types/koralmbahn';
@@ -13,11 +11,17 @@ import { useKioskMode } from './hooks/useKioskMode';
 import { useManualMode } from './hooks/useManualMode';
 import { useImageCache } from './hooks/useImageCache';
 import { DayTimelineLayouter, type DayAxisRow, type DayTimelineBounds, type DayTimelineLayouterConfig } from './layouts/DayTimelineLayouter';
+import { SingleRowTimelineLayouter, type SingleRowBounds } from './layouts/SingleRowTimelineLayouter';
 import { EventCanvasRenderer } from './render/EventCanvasRenderer';
 import { CanvasViewportController } from './viewport/CanvasViewportController';
 import { SnapToContentController } from './viewport/SnapToContentController';
-import { ElectricBorder } from './effects/ElectricBorder/ElectricBorder';
-// import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
+import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
+
+// Viewport Mode: 3 modes for different border checking behaviors
+type ViewportMode = 'off' | 'rectBounds' | 'snapToContent';
+
+// Layout Mode: 2 modes for different layout algorithms
+type LayoutMode = 'dayTimeline' | 'singleRow';
 
 const PADDING = 15;
 
@@ -35,6 +39,7 @@ function App() {
   const lastFrameTimeRef = useRef<number>(0);
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
   const dayLayouterRef = useRef(new DayTimelineLayouter());
+  const singleRowLayouterRef = useRef(new SingleRowTimelineLayouter());
   const layoutEngineRef = useRef(new LayoutEngine<KoralmEvent>(dayLayouterRef.current));
   const viewportControllerRef = useRef(new CanvasViewportController());
   const snapControllerRef = useRef(new SnapToContentController());
@@ -52,10 +57,8 @@ function App() {
   const [isHighResEnabled, setIsHighResEnabled] = useState(true); // F4: HighRes (Default: ON)
   const [showSciFiDashboard, setShowSciFiDashboard] = useState(false); // F6 toggle
   const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimeline'); // F8: Layout Mode (Default: dayTimeline)
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const selectedEventOverlayRef = useRef<HTMLDivElement>(null);
 
   // Click detection refs (to distinguish clicks from drags)
   const mouseDownPosRef = useRef<{ x: number; y: number; button: number } | null>(null);
@@ -86,7 +89,6 @@ function App() {
     canvasWidth: window.innerWidth,
     canvasHeight: window.innerHeight,
     isKioskModeEnabled,
-    onEventSelected: (event) => setSelectedEventId(event?.id || null),
   });
 
   // Wrap manual interaction to also notify snap controller
@@ -225,9 +227,6 @@ function App() {
     if (!viewport) return;
     viewport.centerOn(centerX, centerY, targetScale);
     
-    // Also select it
-    setSelectedEventId(match.data.id);
-    
     event.currentTarget.reset();
     searchInputRef.current?.blur();
   };
@@ -284,33 +283,76 @@ function App() {
     const viewport = controller.init(canvas);
     viewportRef.current = viewport;
 
-    // Apply border check strategy based on viewport mode
-    if (viewportMode === 'rectBounds') {
-      viewport.setBorderCheckStrategy(new RectBoundsStrategy());
-      console.log('[ViewportMode] Applied RectBoundsStrategy (rubber banding)');
-    } else {
-      viewport.setBorderCheckStrategy(new NoBoundsStrategy());
-      console.log('[ViewportMode] Applied NoBoundsStrategy (free panning)');
-    }
+    // v1.0.16: 3-mode viewport system with separate translation/scale rubber banding
+    // Start with 'off' mode (no bounds)
+    console.log('[Viewport] Initialized (v1.0.16) - 3-Mode System: OFF | RectBounds | SnapToContent');
 
     return () => {
       controller.destroy();
       viewportRef.current = null;
     };
+  }, []);
+
+  // Apply viewport mode settings when mode changes
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    switch (viewportMode) {
+      case 'off':
+        // No bounds checking at all
+        viewport.setEnableRubberBandingTranslation(false);
+        viewport.setEnableRubberBandingScale(false);
+        console.log('[Viewport Mode] OFF - No bounds, free panning/zooming');
+        break;
+      case 'rectBounds':
+        // Classic rubber banding for both translation and scale
+        viewport.setEnableRubberBandingTranslation(true);
+        viewport.setEnableRubberBandingScale(true);
+        console.log('[Viewport Mode] RectBounds - Translation + Scale bounds with rubber banding');
+        break;
+      case 'snapToContent':
+        // Scale bounds with 50× maxScale, no translation bounds, Snap-to-Content active
+        viewport.setEnableRubberBandingTranslation(false);
+        viewport.setEnableRubberBandingScale(true);
+        console.log('[Viewport Mode] SnapToContent - Scale bounds (50×), free pan, Snap-to-Content active');
+        break;
+    }
   }, [viewportMode]);
 
   useEffect(() => {
     viewportControllerRef.current.updateBounds(layoutBounds, positionedEvents);
   }, [layoutBounds, positionedEvents]);
 
+  // Switch layouter based on mode
+  useEffect(() => {
+    const layoutEngine = layoutEngineRef.current;
+
+    if (layoutMode === 'dayTimeline') {
+      layoutEngine.setLayouter(dayLayouterRef.current);
+    } else {
+      layoutEngine.setLayouter(singleRowLayouterRef.current);
+    }
+
+    console.log(`[Layout Mode] Switched to ${layoutMode}`);
+  }, [layoutMode]);
+
   useEffect(() => {
     const layoutEngine = layoutEngineRef.current;
     layoutEngine.sync(events, (event) => event.id);
     layoutEngine.layout(viewportSize);
 
-    const layouter = dayLayouterRef.current;
-    setAxisRows(layouter.getAxisRows());
-    const bounds = layouter.getContentBounds();
+    // Get bounds based on current layout mode
+    let bounds: DayTimelineBounds | SingleRowBounds;
+    if (layoutMode === 'dayTimeline') {
+      const layouter = dayLayouterRef.current;
+      setAxisRows(layouter.getAxisRows());
+      bounds = layouter.getContentBounds();
+    } else {
+      setAxisRows([]); // No axis rows in single row mode
+      bounds = singleRowLayouterRef.current.getContentBounds();
+    }
+
     setLayoutBounds(bounds);
 
     const nodes = layoutEngine.all();
@@ -322,7 +364,7 @@ function App() {
       height: node.height.value ?? 0,
     }));
     setPositionedEvents(positioned);
-  }, [events, viewportSize]);
+  }, [events, viewportSize, layoutMode]);
 
   // F1/F2/F3 key toggles
   useEffect(() => {
@@ -365,11 +407,16 @@ function App() {
       if (event.key === 'F7') {
         event.preventDefault();
         setViewportMode((prev) => {
-          const modes: ViewportMode[] = ['off', 'rectBounds', 'snapToContent'];
-          const currentIndex = modes.indexOf(prev);
-          const nextIndex = (currentIndex + 1) % modes.length;
-          const nextMode = modes[nextIndex];
-          console.log(`[Viewport Mode] Switching to: ${nextMode}`);
+          const nextMode = prev === 'off' ? 'rectBounds' : prev === 'rectBounds' ? 'snapToContent' : 'off';
+          console.log(`[Viewport Mode] Cycling: ${prev.toUpperCase()} → ${nextMode.toUpperCase()}`);
+          return nextMode;
+        });
+      }
+      if (event.key === 'F8') {
+        event.preventDefault();
+        setLayoutMode((prev) => {
+          const nextMode = prev === 'dayTimeline' ? 'singleRow' : 'dayTimeline';
+          console.log(`[Layout Mode] Switching: ${prev} → ${nextMode}`);
           return nextMode;
         });
       }
@@ -444,33 +491,8 @@ function App() {
         renderDelta,
         updateDelta,
         isHighResEnabled,
+        layoutMode,
       });
-
-      // Update selection overlay position
-      if (selectedEventId && selectedEventOverlayRef.current && positionedEvents.length > 0) {
-        const event = positionedEvents.find(e => e.id === selectedEventId);
-        if (event && event.width && event.height) {
-          // viewport.scale and offset are available on the viewport object
-          const scale = viewport.scale;
-          const offsetX = viewport.offset.x;
-          const offsetY = viewport.offset.y;
-          
-          const screenX = (event.x || 0) * scale + offsetX;
-          const screenY = (event.y || 0) * scale + offsetY;
-          const screenWidth = event.width * scale;
-          const screenHeight = event.height * scale;
-
-          const el = selectedEventOverlayRef.current;
-          el.style.transform = `translate(${screenX}px, ${screenY}px)`;
-          el.style.width = `${screenWidth}px`;
-          el.style.height = `${screenHeight}px`;
-          el.style.display = 'block';
-        } else {
-          if (selectedEventOverlayRef.current) selectedEventOverlayRef.current.style.display = 'none';
-        }
-      } else if (selectedEventOverlayRef.current) {
-        selectedEventOverlayRef.current.style.display = 'none';
-      }
 
       animationFrameRef.current = requestAnimationFrame(render);
     };
@@ -486,7 +508,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, selectedEventId]);
+  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents]);
 
   return (
     <div className="app-container">
@@ -512,17 +534,28 @@ function App() {
         <div>F4: High-Res {isHighResEnabled ? '✅' : '❌'}</div>
         <div>F6: SciFi Dashboard {showSciFiDashboard ? '✅' : '❌'}</div>
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
-          <div style={{ fontWeight: 'bold' }}>F7: Viewport Mode</div>
+          <div style={{ fontWeight: 'bold' }}>Viewport (v1.0.18)</div>
           <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
-            {viewportMode === 'off' && '❌ Off (Free Panning)'}
-            {viewportMode === 'rectBounds' && '✅ Rect Bounds (Rubber Band)'}
-            {viewportMode === 'snapToContent' && '✅ Snap-to-Content (Auto-Nav)'}
+            F7 Mode: {viewportMode === 'off' ? '❌ OFF' : viewportMode === 'rectBounds' ? '🔲 RectBounds' : '🎯 SnapToContent'}
+          </div>
+          <div style={{ fontSize: '11px', opacity: 0.6, marginTop: '2px' }}>
+            {viewportMode === 'off' && 'No bounds, free panning/zooming'}
+            {viewportMode === 'rectBounds' && 'Translation + Scale bounds'}
+            {viewportMode === 'snapToContent' && 'Scale bounds (50×), auto-navigation'}
+          </div>
+        </div>
+        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
+          <div style={{ fontWeight: 'bold' }}>Layout</div>
+          <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
+            F8: {layoutMode === 'dayTimeline' ? '📅 Day Timeline' : '➡️ Single Row'}
           </div>
         </div>
       </div>
 
-      {/* Temporarily disabled: showSciFiDashboard */}
-      <>
+      {showSciFiDashboard ? (
+        <SciFiDashboard />
+      ) : (
+        <>
           <form className="event-search" onSubmit={handleEventSearch}>
             <input
               ref={searchInputRef}
@@ -575,27 +608,9 @@ function App() {
               }}
             />
             
-            {/* Overlay for ElectricBorder */}
-            <div
-              ref={selectedEventOverlayRef}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                pointerEvents: 'none',
-                display: 'none',
-                zIndex: 10,
-                // We do NOT apply the 3D transform here again, because we are inside the transformed wrapper
-                // However, the canvas uses 100vw/100vh and transforms.
-                // If we position absolutely inside the wrapper, we are in the same coordinate space as the canvas *element*.
-                // The canvas content is drawn in 2D, but the whole plane is rotated.
-                // So our 2D translation on the overlay should match the 2D content on the canvas surface.
-              }}
-            >
-              <ElectricBorder />
-            </div>
           </div>
         </>
+      )}
     </div>
   );
 }
