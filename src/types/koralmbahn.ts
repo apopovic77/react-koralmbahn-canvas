@@ -9,7 +9,7 @@ export interface MediaRef {
   } | null;
 }
 
-export type CardStyle = 'v1' | 'v2' | 'catalog' | 'imageOnly';
+export type CardStyle = 'standard' | 'catalog' | 'imageOnly';
 
 export interface KoralmEvent {
   id: string;

@@ -323,7 +323,9 @@ export class EventCanvasRenderer {
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, width, height);
 
-    const imageHeight = Math.floor(height * transitionState.imageHeightPercent);
+    // Standard card style: Fixed 50% image, 50% text split
+    const imageHeight = Math.floor(height * 0.5);
+
     if (img && img.complete) {
       ctx.save();
       ctx.beginPath();
@@ -366,16 +368,33 @@ export class EventCanvasRenderer {
         ctx.fillText('SCREENSHOT', x + 10, y + 19);
         ctx.restore();
       }
+
+      // DEBUG: Card style marker
+      ctx.save();
+      const debugY = isScreenshotImage ? y + 30 : y + 5;
+      const debugColor = 'rgba(0, 255, 0, 0.8)';
+      const debugText = `STYLE: ${event.cardStyle || 'standard'}`;
+      const debugWidth = 120;
+      ctx.fillStyle = debugColor;
+      ctx.fillRect(x + 5, debugY, debugWidth, 20);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(debugText, x + 10, debugY + 14);
+
+      // Show imageHeight percentage for debugging
+      const imagePercent = Math.round((imageHeight / height) * 100);
+      ctx.fillStyle = 'rgba(0, 0, 255, 0.8)';
+      ctx.fillRect(x + 5, debugY + 25, 100, 20);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(`IMG: ${imagePercent}%`, x + 10, debugY + 39);
+      ctx.restore();
     } else {
       ctx.fillStyle = '#e0e0e0';
       ctx.fillRect(x, y, width, imageHeight);
     }
 
-    if (transitionState.textOpacity <= 0.01) {
-      return;
-    }
-
-    ctx.globalAlpha = transitionState.textOpacity;
+    // Standard card style: Always show text at full opacity (no LOD transitions)
+    ctx.globalAlpha = 1.0;
     const textStartY = y + imageHeight + padding;
     const textStartX = x + padding;
     const textWidth = width - padding * 2;

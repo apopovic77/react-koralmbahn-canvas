@@ -38,15 +38,15 @@ const IMAGE_LOD_THRESHOLD = 1.5; // Above this zoom: use high-res images, below:
 function getDefaultCardStyleForLayout(layoutMode: LayoutMode): CardStyle {
   switch (layoutMode) {
     case 'dayTimeline':
-      return 'v1'; // Standard cards with image + text
+      return 'standard'; // Standard cards: 50% image, 50% text
     case 'singleRow':
-      return 'v2'; // Alternative card layout
+      return 'standard'; // Standard cards: 50% image, 50% text
     case 'masonryVertical':
       return 'catalog'; // Compact newspaper/catalog layout with variable height
     case 'masonryHorizontal':
       return 'imageOnly'; // Image-only grid
     default:
-      return 'v1';
+      return 'standard';
   }
 }
 
