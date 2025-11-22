@@ -9,7 +9,7 @@ export interface MediaRef {
   } | null;
 }
 
-export type CardStyle = 'v1' | 'v2';
+export type CardStyle = 'v1' | 'v2' | 'catalog' | 'imageOnly';
 
 export interface KoralmEvent {
   id: string;
@@ -18,6 +18,7 @@ export interface KoralmEvent {
   summary: string;
   url: string;
   imageUrl: string | null;
+  screenshotUrl?: string | null; // Playwright/PDF screenshot URL
   publishedAt: string | null;
   sourceName: string | null;
   category: string | null;

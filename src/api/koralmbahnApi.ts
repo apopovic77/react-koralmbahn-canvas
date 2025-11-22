@@ -80,36 +80,66 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
   const title = event.title_de?.trim() || event.title_en?.trim() || 'Unbetitelter Beitrag';
   const summary = normalizeSnippet(event.summary_de || event.summary_en);
 
-  // Extract image URL from media array with smart format & aspect ratio handling
-  let imageUrl: string | null = null;
-  if (event.media && event.media.length > 0) {
-    const firstMedia = event.media[0];
+  // Helper to check if a media item is a screenshot
+  const isScreenshotMedia = (media: NonNullable<EventApiResponse['media']>[0]): boolean => {
+    return (
+      media.source_name?.includes('Screenshot') ||
+      media.url?.includes('#screenshot') ||
+      media.url?.toLowerCase().includes('playwright') ||
+      media.url?.toLowerCase().includes('screenshot')
+    );
+  };
 
-    // Check if URL is already a storage API URL
-    const isStorageUrl = firstMedia?.url?.includes('api-storage.arkturian.com');
+  // Helper to build media URL
+  const buildMediaUrl = (media: NonNullable<EventApiResponse['media']>[0]): string | null => {
+    const isStorageUrl = media?.url?.includes('api-storage.arkturian.com');
 
-    if (isStorageUrl && firstMedia?.url) {
-      // Already a storage URL - use directly
-      imageUrl = firstMedia.url;
-    } else if (firstMedia?.id || firstMedia?.storage_object?.id) {
-      // Build storage URL from ID
-      const storageId = firstMedia.id || firstMedia.storage_object?.id;
-      const mimeType = firstMedia.storage_object?.mime_type;
+    if (isStorageUrl && media?.url) {
+      return media.url;
+    } else if (media?.id || media?.storage_object?.id) {
+      const storageId = media.id || media.storage_object?.id;
+      const mimeType = media.storage_object?.mime_type;
       const isSvg = mimeType?.toLowerCase().includes('svg');
       const params: Record<string, string | number> = {};
 
-      // SVGs: Always convert to PNG with aspect ratio for letterboxing
       if (isSvg) {
         params.format = 'png';
-        params.aspect_ratio = '5:7'; // Card aspect ratio (width:height)
+        params.aspect_ratio = '5:7';
       }
 
-      imageUrl = buildStorageMediaUrl(storageId!, params);
-    } else {
-      // No storage ID available - skip external URLs to avoid CORS errors
-      console.warn(`[KoralmAPI] Event ${event.event_id}: No storage ID, skipping external URL to avoid CORS:`, firstMedia?.url);
-      imageUrl = null;
+      return buildStorageMediaUrl(storageId!, params);
     }
+    return null;
+  };
+
+  // Extract both hero image and screenshot URLs
+  let imageUrl: string | null = null;
+  let screenshotUrl: string | null = null;
+
+  if (event.media && event.media.length > 0) {
+    // Find first non-screenshot (hero image)
+    const heroMedia = event.media.find(m => !isScreenshotMedia(m));
+    // Find first screenshot
+    const screenshotMedia = event.media.find(m => isScreenshotMedia(m));
+
+    imageUrl = heroMedia ? buildMediaUrl(heroMedia) : buildMediaUrl(event.media[0]);
+    screenshotUrl = screenshotMedia ? buildMediaUrl(screenshotMedia) : null;
+  }
+
+  // DEBUG: Log screenshot detection
+  const hasScreenshot = !!screenshotUrl;
+  if (hasScreenshot || event.media?.some(m => isScreenshotMedia(m))) {
+    console.log('[API Debug] Event with screenshot:', {
+      title: title.substring(0, 50),
+      imageUrl,
+      screenshotUrl,
+      sourceName: event.media?.[0]?.source_name,
+      allMedia: event.media?.map(m => ({
+        source_name: m.source_name,
+        url: m.url?.substring(0, 60),
+        isScreenshot: isScreenshotMedia(m)
+      }))
+    });
   }
 
   return {
@@ -119,6 +149,7 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
     summary: summary.length > 200 ? summary.substring(0, 197) + '...' : summary,
     url: event.url || '#',
     imageUrl,
+    screenshotUrl,
     publishedAt: event.published_at || null,
     sourceName: event.media?.[0]?.source_name || null,
     category: event.tags?.[0] || null,
@@ -146,6 +177,10 @@ export async function fetchKoralmEvents(
     const events = Array.isArray(data.events) ? data.events : [];
 
     console.log(`[KoralmAPI] Loaded ${events.length} events`);
+
+    // DEBUG: Log first 3 events with media to see structure
+    const eventsWithMedia = events.filter((e: any) => e.media && e.media.length > 0).slice(0, 3);
+    console.log('[KoralmAPI] First 3 events with media (raw):', eventsWithMedia);
 
     return events.map((event: any) => mapEventToKoralmEvent(event));
   } catch (error) {

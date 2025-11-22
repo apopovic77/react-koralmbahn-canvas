@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
 import { ViewportTransform, useLODTransitions } from 'arkturian-canvas-engine';
 import { LayoutEngine } from 'arkturian-canvas-engine/src/layout/LayoutEngine';
+import type { LayoutNode } from 'arkturian-canvas-engine/src/layout/LayoutNode';
 
 import { fetchKoralmEvents } from './api/koralmbahnApi';
-import type { KoralmEvent } from './types/koralmbahn';
+import type { CardStyle, KoralmEvent } from './types/koralmbahn';
 import QRCode from 'qrcode';
 import { useKioskMode } from './hooks/useKioskMode';
 import { useManualMode } from './hooks/useManualMode';
 import { useImageCache } from './hooks/useImageCache';
 import { DayTimelineLayouter, type DayAxisRow, type DayTimelineBounds, type DayTimelineLayouterConfig } from './layouts/DayTimelineLayouter';
 import { SingleRowTimelineLayouter, type SingleRowBounds } from './layouts/SingleRowTimelineLayouter';
+import { MasonryLayouter } from './layouts/MasonryLayouter';
 import { EventCanvasRenderer } from './render/EventCanvasRenderer';
 import { CanvasViewportController } from './viewport/CanvasViewportController';
 import { SnapToContentController } from './viewport/SnapToContentController';
@@ -20,8 +22,8 @@ import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
 // Viewport Mode: 3 modes for different border checking behaviors
 type ViewportMode = 'off' | 'rectBounds' | 'snapToContent';
 
-// Layout Mode: 2 modes for different layout algorithms
-type LayoutMode = 'dayTimeline' | 'singleRow';
+// Layout Mode: 4 modes for different layout algorithms
+type LayoutMode = 'dayTimeline' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
 
 const PADDING = 15;
 
@@ -32,6 +34,22 @@ const UPDATE_FPS = 25; // Logic updates (culling, LOD) at 25 FPS for performance
 // Image LOD (Level of Detail) threshold
 const IMAGE_LOD_THRESHOLD = 1.5; // Above this zoom: use high-res images, below: use thumbnails
 
+// Auto-Card-Style mapping for each Layout Mode
+function getDefaultCardStyleForLayout(layoutMode: LayoutMode): CardStyle {
+  switch (layoutMode) {
+    case 'dayTimeline':
+      return 'v1'; // Standard cards with image + text
+    case 'singleRow':
+      return 'v2'; // Alternative card layout
+    case 'masonryVertical':
+      return 'catalog'; // Compact newspaper/catalog layout with variable height
+    case 'masonryHorizontal':
+      return 'imageOnly'; // Image-only grid
+    default:
+      return 'v1';
+  }
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<ViewportTransform | null>(null);
@@ -40,6 +58,10 @@ function App() {
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
   const dayLayouterRef = useRef(new DayTimelineLayouter());
   const singleRowLayouterRef = useRef(new SingleRowTimelineLayouter());
+
+  // Masonry layouters need to be created inside component to access getImage
+  const masonryVerticalLayouterRef = useRef<MasonryLayouter | null>(null);
+  const masonryHorizontalLayouterRef = useRef<MasonryLayouter | null>(null);
   const layoutEngineRef = useRef(new LayoutEngine<KoralmEvent>(dayLayouterRef.current));
   const viewportControllerRef = useRef(new CanvasViewportController());
   const snapControllerRef = useRef(new SnapToContentController());
@@ -58,6 +80,10 @@ function App() {
   const [showSciFiDashboard, setShowSciFiDashboard] = useState(false); // F6 toggle
   const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimeline'); // F8: Layout Mode (Default: dayTimeline)
+  const [useScreenshotsOnly, setUseScreenshotsOnly] = useState(false); // F9: Screenshots Only (Default: OFF)
+  const [cardStyle, setCardStyle] = useState<CardStyle>(getDefaultCardStyleForLayout('dayTimeline')); // F10: Card Style (Auto-set based on layout mode)
+  const [useMuseumQR, setUseMuseumQR] = useState(true); // F11: Museum QR Codes (Default: ON - show museum page instead of original article)
+  const [qrRenderTrigger, setQrRenderTrigger] = useState(0); // Trigger re-render when QR codes are ready
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Click detection refs (to distinguish clicks from drags)
@@ -71,6 +97,24 @@ function App() {
   const { getImage, loadHighResImage, preloadImages } = useImageCache();
   const { updateLODState } = useLODTransitions();
 
+  // Transform events based on F9 "Screenshots Only" toggle
+  const displayEvents = useMemo(() => {
+    // qrRenderTrigger is in dependencies to force re-render when QR codes are ready
+    if (!useScreenshotsOnly) return events;
+
+    return events.map(event => {
+      // Only transform if screenshot exists
+      if (event.screenshotUrl) {
+        return {
+          ...event,
+          imageUrl: event.screenshotUrl,
+          sourceName: 'Article Screenshot', // Mark as screenshot for top-aligned rendering
+        };
+      }
+      return event;
+    });
+  }, [events, useScreenshotsOnly, qrRenderTrigger]);
+
   useEffect(() => {
     rendererRef.current = new EventCanvasRenderer({
       padding: PADDING,
@@ -80,12 +124,66 @@ function App() {
       updateLODState,
       enableHighResFetch: isHighResEnabled,
     });
+
+    // Initialize masonry layouters with image aspect ratio callback
+    const getImageAspectRatio = (node: LayoutNode<KoralmEvent>) => {
+      const event = node.data;
+      if (!event.imageUrl) return null;
+
+      // Try to get the loaded image from cache (try high-res first, then thumbnail)
+      const img = getImage(event.imageUrl, true) || getImage(event.imageUrl, false);
+      if (img && img.complete && img.width > 0 && img.height > 0) {
+        return img.width / img.height;
+      }
+
+      return null; // Will use default aspect ratio
+    };
+
+    // Callback to add extra height for catalog cards (which need space for text)
+    const getExtraHeight = (node: LayoutNode<KoralmEvent>, baseHeight: number): number => {
+      const cardStyle = node.data.cardStyle;
+
+      if (cardStyle === 'catalog') {
+        // Catalog cards need extra space for:
+        // - Title (3-4 lines: ~68px)
+        // - Subtitle/Source (1-2 lines: ~28px)
+        // - Summary (variable, estimate ~112px for ~8 lines)
+        // - QR code area (50px + padding ~20px)
+        // - Padding (top: 12px, between elements: ~22px, bottom for QR: 20px)
+        // Total text area: ~300px
+        return 300;
+      }
+
+      return 0; // No extra height for other card styles
+    };
+
+    masonryVerticalLayouterRef.current = new MasonryLayouter({
+      direction: 'vertical',
+      columnCount: 4,
+      targetWidth: 300,
+      gap: 16,
+      padding: 50,
+      defaultAspectRatio: 5 / 7,
+      getImageAspectRatio,
+      getExtraHeight,
+    });
+
+    masonryHorizontalLayouterRef.current = new MasonryLayouter({
+      direction: 'horizontal',
+      rowCount: 3,
+      targetHeight: 300,
+      gap: 16,
+      padding: 50,
+      defaultAspectRatio: 5 / 7,
+      getImageAspectRatio,
+      getExtraHeight,
+    });
   }, [getImage, loadHighResImage, updateLODState, isHighResEnabled]);
 
   // Manual mode hook
   const { isManualMode, handleCanvasClick, handleCanvasRightClick, handleManualInteraction } = useManualMode({
     viewport: viewportRef.current,
-    events: positionedEvents,
+    getLayoutNodes: () => layoutEngineRef.current.all(),
     canvasWidth: window.innerWidth,
     canvasHeight: window.innerHeight,
     isKioskModeEnabled,
@@ -240,31 +338,55 @@ function App() {
       console.log(`[App] Loaded ${data.length} events`);
 
       await preloadImages(data);
-
-      data.forEach(async (event) => {
-        try {
-          const qrDataUrl = await QRCode.toDataURL(event.url, {
-            width: 80,
-            margin: 1,
-            color: {
-              dark: '#000000',
-              light: '#ffffff',
-            },
-          });
-
-          const qrImg = new Image();
-          qrImg.onload = () => {
-            event.qrCode = qrImg;
-          };
-          qrImg.src = qrDataUrl;
-        } catch (error) {
-          console.error(`[App] QR code generation failed for event ${event.id}:`, error);
-        }
-      });
     }
 
     loadEvents();
   }, []);
+
+  // Generate QR codes when events or useMuseumQR changes
+  useEffect(() => {
+    if (events.length === 0) return;
+
+    // Determine base URL for museum article pages
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+
+    let completedCount = 0;
+    const totalCount = events.length;
+
+    events.forEach(async (event) => {
+      try {
+        // Choose URL based on F11 toggle
+        const qrUrl = useMuseumQR
+          ? `${baseUrl}/article/${event.id}` // Museum article page
+          : event.url; // Original article URL
+
+        const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+          width: 80,
+          margin: 1,
+          color: {
+            dark: '#000000',
+            light: '#ffffff',
+          },
+        });
+
+        const qrImg = new Image();
+        qrImg.onload = () => {
+          event.qrCode = qrImg;
+          completedCount++;
+
+          // Force re-render when all QR codes are ready
+          if (completedCount === totalCount) {
+            console.log(`[QR Codes] All ${totalCount} QR codes generated (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
+            setQrRenderTrigger(prev => prev + 1); // Force re-render
+          }
+        };
+        qrImg.src = qrDataUrl;
+      } catch (error) {
+        console.error(`[App] QR code generation failed for event ${event.id}:`, error);
+        completedCount++;
+      }
+    });
+  }, [events, useMuseumQR]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -330,8 +452,16 @@ function App() {
 
     if (layoutMode === 'dayTimeline') {
       layoutEngine.setLayouter(dayLayouterRef.current);
-    } else {
+    } else if (layoutMode === 'singleRow') {
       layoutEngine.setLayouter(singleRowLayouterRef.current);
+    } else if (layoutMode === 'masonryVertical') {
+      if (masonryVerticalLayouterRef.current) {
+        layoutEngine.setLayouter(masonryVerticalLayouterRef.current);
+      }
+    } else if (layoutMode === 'masonryHorizontal') {
+      if (masonryHorizontalLayouterRef.current) {
+        layoutEngine.setLayouter(masonryHorizontalLayouterRef.current);
+      }
     }
 
     console.log(`[Layout Mode] Switched to ${layoutMode}`);
@@ -339,7 +469,14 @@ function App() {
 
   useEffect(() => {
     const layoutEngine = layoutEngineRef.current;
-    layoutEngine.sync(events, (event) => event.id);
+
+    // Apply F10-controlled cardStyle to all events (including masonry modes)
+    const eventsWithCardStyle = displayEvents.map((event) => ({
+      ...event,
+      cardStyle: cardStyle, // Use the F10-controlled cardStyle state for ALL layouts
+    }));
+
+    layoutEngine.sync(eventsWithCardStyle, (event) => event.id);
     layoutEngine.layout(viewportSize);
 
     // Get bounds based on current layout mode
@@ -348,9 +485,16 @@ function App() {
       const layouter = dayLayouterRef.current;
       setAxisRows(layouter.getAxisRows());
       bounds = layouter.getContentBounds();
-    } else {
+    } else if (layoutMode === 'singleRow') {
       setAxisRows([]); // No axis rows in single row mode
       bounds = singleRowLayouterRef.current.getContentBounds();
+    } else if (layoutMode === 'masonryVertical') {
+      setAxisRows([]); // No axis rows in masonry mode
+      bounds = masonryVerticalLayouterRef.current?.getContentBounds() || { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
+    } else {
+      // masonryHorizontal
+      setAxisRows([]); // No axis rows in masonry mode
+      bounds = masonryHorizontalLayouterRef.current?.getContentBounds() || { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
     }
 
     setLayoutBounds(bounds);
@@ -364,7 +508,7 @@ function App() {
       height: node.height.value ?? 0,
     }));
     setPositionedEvents(positioned);
-  }, [events, viewportSize, layoutMode]);
+  }, [displayEvents, viewportSize, layoutMode, cardStyle]);
 
   // F1/F2/F3 key toggles
   useEffect(() => {
@@ -415,9 +559,54 @@ function App() {
       if (event.key === 'F8') {
         event.preventDefault();
         setLayoutMode((prev) => {
-          const nextMode = prev === 'dayTimeline' ? 'singleRow' : 'dayTimeline';
-          console.log(`[Layout Mode] Switching: ${prev} → ${nextMode}`);
+          let nextMode: LayoutMode;
+          if (prev === 'dayTimeline') {
+            nextMode = 'singleRow';
+          } else if (prev === 'singleRow') {
+            nextMode = 'masonryVertical';
+          } else if (prev === 'masonryVertical') {
+            nextMode = 'masonryHorizontal';
+          } else {
+            nextMode = 'dayTimeline';
+          }
+
+          // Auto-set card style for new layout mode
+          const autoCardStyle = getDefaultCardStyleForLayout(nextMode);
+          setCardStyle(autoCardStyle);
+
+          console.log(`[Layout Mode] Switching: ${prev} → ${nextMode} (Auto Card Style: ${autoCardStyle})`);
           return nextMode;
+        });
+      }
+      if (event.key === 'F9') {
+        event.preventDefault();
+        setUseScreenshotsOnly((prev) => {
+          console.log(`[Screenshots Only] ${!prev ? 'ENABLED' : 'DISABLED'}`);
+          return !prev;
+        });
+      }
+      if (event.key === 'F10') {
+        event.preventDefault();
+        setCardStyle((prev) => {
+          let nextStyle: CardStyle;
+          if (prev === 'v1') {
+            nextStyle = 'v2';
+          } else if (prev === 'v2') {
+            nextStyle = 'catalog';
+          } else if (prev === 'catalog') {
+            nextStyle = 'imageOnly';
+          } else {
+            nextStyle = 'v1';
+          }
+          console.log(`[Card Style] Switching: ${prev} → ${nextStyle}`);
+          return nextStyle;
+        });
+      }
+      if (event.key === 'F11') {
+        event.preventDefault();
+        setUseMuseumQR((prev) => {
+          console.log(`[Museum QR] ${!prev ? 'ENABLED' : 'DISABLED'} - QR codes will point to ${!prev ? 'museum article pages' : 'original articles'}`);
+          return !prev;
         });
       }
       if (event.key === 'f' && (event.ctrlKey || event.metaKey)) {
@@ -508,7 +697,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [events, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents]);
+  }, [displayEvents, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents]);
 
   return (
     <div className="app-container">
@@ -533,6 +722,9 @@ function App() {
         <div>F3: Kiosk {isKioskModeEnabled ? '✅' : '❌'}</div>
         <div>F4: High-Res {isHighResEnabled ? '✅' : '❌'}</div>
         <div>F6: SciFi Dashboard {showSciFiDashboard ? '✅' : '❌'}</div>
+        <div>F9: Screenshots Only {useScreenshotsOnly ? '✅' : '❌'}</div>
+        <div>F10: Card Style 🎨 {cardStyle}</div>
+        <div>F11: Museum QR {useMuseumQR ? '✅' : '❌'}</div>
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
           <div style={{ fontWeight: 'bold' }}>Viewport (v1.0.18)</div>
           <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
@@ -547,7 +739,12 @@ function App() {
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
           <div style={{ fontWeight: 'bold' }}>Layout</div>
           <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
-            F8: {layoutMode === 'dayTimeline' ? '📅 Day Timeline' : '➡️ Single Row'}
+            F8: {
+              layoutMode === 'dayTimeline' ? '📅 Day Timeline' :
+              layoutMode === 'singleRow' ? '➡️ Single Row' :
+              layoutMode === 'masonryVertical' ? '🧱 Masonry ⬇️' :
+              '🧱 Masonry ➡️'
+            }
           </div>
         </div>
       </div>

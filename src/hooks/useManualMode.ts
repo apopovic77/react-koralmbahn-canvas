@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ViewportTransform } from 'arkturian-canvas-engine';
+import type { LayoutNode } from 'arkturian-canvas-engine/src/layout/LayoutNode';
 import type { KoralmEvent } from '../types/koralmbahn';
 
 interface UseManualModeOptions {
   viewport: ViewportTransform | null;
-  events: KoralmEvent[];
+  getLayoutNodes: () => LayoutNode<KoralmEvent>[];
   canvasWidth: number;
   canvasHeight: number;
   onManualModeStart?: () => void;
@@ -26,7 +27,7 @@ const DEFAULT_TRANSITION_SPEED = 0.002; // Faster animation for better visibilit
 
 export function useManualMode({
   viewport,
-  events,
+  getLayoutNodes,
   canvasWidth,
   canvasHeight,
   onManualModeStart,
@@ -95,21 +96,29 @@ export function useManualMode({
     const worldX = worldPos.x;
     const worldY = worldPos.y;
 
+    // Get current layout nodes
+    const nodes = getLayoutNodes();
     console.log(`[ManualMode] Click at canvas (${canvasX.toFixed(0)}, ${canvasY.toFixed(0)}) -> world (${worldX.toFixed(0)}, ${worldY.toFixed(0)})`);
-    console.log(`[ManualMode] Checking ${events.length} events for hit...`);
+    console.log(`[ManualMode] Checking ${nodes.length} nodes for hit...`);
 
-    // Find clicked event
-    const clickedEvent = events.find((e) => {
-      if (!e.x || !e.y || !e.width || !e.height) return false;
+    // Find clicked node
+    const clickedNode = nodes.find((node) => {
+      const x = node.posX.value ?? 0;
+      const y = node.posY.value ?? 0;
+      const width = node.width.value ?? 0;
+      const height = node.height.value ?? 0;
+
+      if (!width || !height) return false;
       return (
-        worldX >= e.x &&
-        worldX <= e.x + e.width &&
-        worldY >= e.y &&
-        worldY <= e.y + e.height
+        worldX >= x &&
+        worldX <= x + width &&
+        worldY >= y &&
+        worldY <= y + height
       );
     });
 
-    if (clickedEvent) {
+    if (clickedNode) {
+      const clickedEvent = clickedNode.data;
       console.log(`[ManualMode] Left-click: Zoom to event: ${clickedEvent.title}`);
 
       // Switch to manual mode
@@ -125,11 +134,16 @@ export function useManualMode({
       }
 
       // Zoom to event (center and fill ~80% of viewport)
-      const centerX = clickedEvent.x! + clickedEvent.width! / 2;
-      const centerY = clickedEvent.y! + clickedEvent.height! / 2;
+      const x = clickedNode.posX.value ?? 0;
+      const y = clickedNode.posY.value ?? 0;
+      const width = clickedNode.width.value ?? 0;
+      const height = clickedNode.height.value ?? 0;
+
+      const centerX = x + width / 2;
+      const centerY = y + height / 2;
       const targetScale = Math.min(
-        (canvasWidth * 0.8) / clickedEvent.width!,
-        (canvasHeight * 0.8) / clickedEvent.height!
+        (canvasWidth * 0.8) / width,
+        (canvasHeight * 0.8) / height
       );
 
       viewport.centerOn(centerX, centerY, targetScale);
@@ -137,7 +151,7 @@ export function useManualMode({
       // Start inactivity timer
       resetInactivityTimer();
     } else {
-      console.log('[ManualMode] No event found at click position');
+      console.log('[ManualMode] No node found at click position');
     }
   };
 
@@ -160,18 +174,27 @@ export function useManualMode({
     const worldX = worldPos.x;
     const worldY = worldPos.y;
 
-    // Find clicked event
-    const clickedEvent = events.find((e) => {
-      if (!e.x || !e.y || !e.width || !e.height) return false;
+    // Get current layout nodes
+    const nodes = getLayoutNodes();
+
+    // Find clicked node
+    const clickedNode = nodes.find((node) => {
+      const x = node.posX.value ?? 0;
+      const y = node.posY.value ?? 0;
+      const width = node.width.value ?? 0;
+      const height = node.height.value ?? 0;
+
+      if (!width || !height) return false;
       return (
-        worldX >= e.x &&
-        worldX <= e.x + e.width &&
-        worldY >= e.y &&
-        worldY <= e.y + e.height
+        worldX >= x &&
+        worldX <= x + width &&
+        worldY >= y &&
+        worldY <= y + height
       );
     });
 
-    if (clickedEvent) {
+    if (clickedNode) {
+      const clickedEvent = clickedNode.data;
       console.log(`[ManualMode] Right-click: Open URL for event: ${clickedEvent.title}`);
 
       // Open article URL in new tab
