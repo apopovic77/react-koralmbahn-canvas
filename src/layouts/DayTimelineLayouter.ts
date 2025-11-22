@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: DayTimelineLayouterConfig = {
   columnGap: 24,
   rowGap: 40,
   cardWidth: 260,
-  cardHeight: 320,
+  cardHeight: 460, // 9:16 aspect ratio (smartphone portrait format): 260 * 16/9 = 460
 };
 
 type DayGroup = {
