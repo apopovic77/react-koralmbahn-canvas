@@ -82,7 +82,7 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
 
   // Helper to check if a media item is a screenshot
   const isScreenshotMedia = (media: NonNullable<EventApiResponse['media']>[0]): boolean => {
-    return (
+    return !!(
       media.source_name?.includes('Screenshot') ||
       media.url?.includes('#screenshot') ||
       media.url?.toLowerCase().includes('playwright') ||

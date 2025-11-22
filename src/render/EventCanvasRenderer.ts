@@ -30,7 +30,7 @@ interface RenderFrameParams {
   failedImages: Set<string>;
   renderDelta: number;
   updateDelta: number;
-  layoutMode: 'dayTimeline' | 'singleRow';
+  layoutMode: 'dayTimeline' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
 }
 
 export class EventCanvasRenderer {
@@ -45,7 +45,7 @@ export class EventCanvasRenderer {
    * Detect if an event is a Playwright/PDF screenshot using API markers
    */
   private isScreenshot(event: KoralmEvent): boolean {
-    return (
+    return !!(
       (event.sourceName?.includes('Screenshot')) ||
       (event.imageUrl?.includes('#screenshot')) ||
       (event.imageUrl?.toLowerCase().includes('playwright')) ||
@@ -743,19 +743,5 @@ export class EventCanvasRenderer {
     }
 
     return startY + limit * lineHeight + (limit > 0 ? 0 : fontSize);
-  }
-
-  private truncateUrl(ctx: CanvasRenderingContext2D, url: string, maxWidth: number): string {
-    let displayUrl = url;
-    if (ctx.measureText(displayUrl).width <= maxWidth) {
-      return displayUrl;
-    }
-
-    const urlParts = displayUrl.split('/');
-    displayUrl = urlParts[0] + '//' + urlParts[2] + '/.../' + urlParts[urlParts.length - 1];
-    if (ctx.measureText(displayUrl).width > maxWidth) {
-      displayUrl = displayUrl.substring(0, 30) + '...';
-    }
-    return displayUrl;
   }
 }

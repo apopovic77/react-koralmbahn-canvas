@@ -140,7 +140,7 @@ function App() {
     };
 
     // Callback to add extra height for catalog cards (which need space for text)
-    const getExtraHeight = (node: LayoutNode<KoralmEvent>, baseHeight: number): number => {
+    const getExtraHeight = (node: LayoutNode<KoralmEvent>, _baseHeight: number): number => {
       const cardStyle = node.data.cardStyle;
 
       if (cardStyle === 'catalog') {
