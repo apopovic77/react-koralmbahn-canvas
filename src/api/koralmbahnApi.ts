@@ -1,8 +1,17 @@
 import type { KoralmEvent } from '../types/koralmbahn';
 
+const DEFAULT_STORAGE_BASE_URL = 'https://api-storage.arkserver.arkturian.com';
 const STORAGE_BASE_URL =
   (import.meta.env.VITE_KORALMBAHN_STORAGE_URL as string | undefined)?.replace(/\/+$/, '') ??
-  'https://api-storage.arkturian.com';
+  DEFAULT_STORAGE_BASE_URL;
+
+const STORAGE_HOSTNAME = (() => {
+  try {
+    return new URL(`${STORAGE_BASE_URL}/`).hostname;
+  } catch {
+    return undefined;
+  }
+})();
 
 function buildStorageMediaUrl(
   id: string | number,
@@ -92,7 +101,16 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
 
   // Helper to build media URL
   const buildMediaUrl = (media: NonNullable<EventApiResponse['media']>[0]): string | null => {
-    const isStorageUrl = media?.url?.includes('api-storage.arkturian.com');
+    const storageHost = STORAGE_HOSTNAME;
+    const isStorageUrl = (() => {
+      if (!media?.url) return false;
+      try {
+        const host = new URL(media.url).hostname;
+        return storageHost ? host === storageHost : media.url.includes('/storage/media/');
+      } catch {
+        return media.url.includes('/storage/media/');
+      }
+    })();
 
     if (isStorageUrl && media?.url) {
       return media.url;
