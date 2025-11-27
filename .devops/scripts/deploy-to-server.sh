@@ -120,23 +120,35 @@ eval $(parse_yaml "$SERVER_CONFIG" "CFG_")
 
 SERVER_HOST="${CFG_server_host:-}"
 SERVER_USER="${CFG_server_user:-root}"
-SERVER_TYPE="${CFG_server_type:-python-api}"
+SERVER_PORT="${CFG_server_port:-22}"
+SERVER_TYPE="${CFG_server_type:-static-site}"
 DEPLOY_PATH="${CFG_server_deploy_path:-}"
 SERVICE_NAME="${CFG_service_name:-}"
 BACKUP_ENABLED="${CFG_backup_enabled:-true}"
 BACKUP_DIR="${CFG_backup_dir:-/var/backups}"
-BACKUP_PREFIX="${CFG_backup_prefix:-$SERVICE_NAME}"
+BACKUP_PREFIX="${CFG_backup_prefix:-${SERVICE_NAME:-app}}"
+SSH_CMD="ssh -p $SERVER_PORT"
+SCP_CMD="scp -P $SERVER_PORT"
+RSYNC_CMD="rsync -e \"$SSH_CMD\""
 
 # Validate
-if [ -z "$SERVER_HOST" ] || [ -z "$DEPLOY_PATH" ] || [ -z "$SERVICE_NAME" ]; then
-    echo -e "${RED}❌ Error: Missing required config fields${NC}"
+if [ -z "$SERVER_HOST" ] || [ -z "$DEPLOY_PATH" ]; then
+    echo -e "${RED}❌ Error: Missing required config fields (server_host, deploy_path)${NC}"
+    exit 1
+fi
+
+# Validate service name for non-static deployments
+if [ "$SERVER_TYPE" != "static-site" ] && [ -z "$SERVICE_NAME" ]; then
+    echo -e "${RED}❌ Error: service_name required for $SERVER_TYPE deployments${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}✅ Configuration loaded${NC}"
 echo -e "  Server: ${YELLOW}$SERVER_USER@$SERVER_HOST${NC}"
 echo -e "  Deploy path: ${YELLOW}$DEPLOY_PATH${NC}"
-echo -e "  Service: ${YELLOW}$SERVICE_NAME${NC}"
+if [ -n "$SERVICE_NAME" ]; then
+    echo -e "  Service: ${YELLOW}$SERVICE_NAME${NC}"
+fi
 echo ""
 
 # Check Git status
@@ -183,8 +195,8 @@ if [ "$SKIP_BACKUP" = false ] && [ "$BACKUP_ENABLED" = "true" ]; then
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
     BACKUP_PATH="$BACKUP_DIR/${BACKUP_PREFIX}-${TIMESTAMP}"
 
-    if ssh "$SERVER_USER@$SERVER_HOST" "[ -d '$DEPLOY_PATH' ]" 2>/dev/null; then
-        ssh "$SERVER_USER@$SERVER_HOST" bash << EOF
+    if $SSH_CMD "$SERVER_USER@$SERVER_HOST" "[ -d '$DEPLOY_PATH' ]" 2>/dev/null; then
+        $SSH_CMD "$SERVER_USER@$SERVER_HOST" bash << EOF
 mkdir -p "$BACKUP_DIR"
 cp -r "$DEPLOY_PATH" "$BACKUP_PATH"
 EOF
@@ -200,6 +212,7 @@ echo -e "${YELLOW}🚢 Deploying files...${NC}"
 if [ "$SERVER_TYPE" = "python-api" ]; then
     # Python API: rsync all files except venv
     rsync -az --delete \
+        -e "$SSH_CMD" \
         --exclude='venv' \
         --exclude='.git' \
         --exclude='__pycache__' \
@@ -210,7 +223,7 @@ if [ "$SERVER_TYPE" = "python-api" ]; then
 
     # Update dependencies if requirements.txt changed
     echo -e "${YELLOW}📦 Updating Python dependencies...${NC}"
-    ssh "$SERVER_USER@$SERVER_HOST" bash << EOF
+    $SSH_CMD "$SERVER_USER@$SERVER_HOST" bash << EOF
 cd "$DEPLOY_PATH"
 if [ -f "venv/bin/pip" ]; then
     source venv/bin/activate
@@ -219,12 +232,14 @@ fi
 EOF
 
 elif [ -d "$REPO_ROOT/dist" ]; then
-    # Node.js: deploy dist folder
+    # Node.js/Static site: deploy dist folder
     rsync -az --delete \
+        -e "$SSH_CMD" \
         "$REPO_ROOT/dist/" "$SERVER_USER@$SERVER_HOST:$DEPLOY_PATH/"
 else
     # Generic: deploy all
     rsync -az --delete \
+        -e "$SSH_CMD" \
         --exclude='.git' \
         --exclude='node_modules' \
         --exclude='.env.local' \
@@ -235,24 +250,28 @@ echo -e "${GREEN}✅ Files deployed${NC}"
 
 # Set permissions
 echo -e "${YELLOW}🔒 Setting permissions...${NC}"
-ssh "$SERVER_USER@$SERVER_HOST" "chown -R www-data:www-data '$DEPLOY_PATH' && chmod -R 755 '$DEPLOY_PATH'"
+$SSH_CMD "$SERVER_USER@$SERVER_HOST" "chown -R www-data:www-data '$DEPLOY_PATH' && chmod -R 755 '$DEPLOY_PATH'"
 
-# Restart service
-echo -e "${YELLOW}🔄 Restarting service...${NC}"
-ssh "$SERVER_USER@$SERVER_HOST" "systemctl restart $SERVICE_NAME"
+# Restart service (skip for static sites)
+if [ "$SERVER_TYPE" != "static-site" ] && [ -n "$SERVICE_NAME" ]; then
+    echo -e "${YELLOW}🔄 Restarting service...${NC}"
+    $SSH_CMD "$SERVER_USER@$SERVER_HOST" "systemctl restart $SERVICE_NAME"
 
-# Wait for service to start
-sleep 3
+    # Wait for service to start
+    sleep 3
 
-# Health check
-echo -e "${YELLOW}🏥 Running health check...${NC}"
+    # Health check
+    echo -e "${YELLOW}🏥 Running health check...${NC}"
 
-if ssh "$SERVER_USER@$SERVER_HOST" "systemctl is-active --quiet $SERVICE_NAME"; then
-    echo -e "${GREEN}✅ Service is running${NC}"
+    if $SSH_CMD "$SERVER_USER@$SERVER_HOST" "systemctl is-active --quiet $SERVICE_NAME"; then
+        echo -e "${GREEN}✅ Service is running${NC}"
+    else
+        echo -e "${RED}❌ Service failed to start${NC}"
+        echo -e "${YELLOW}Check logs: $SSH_CMD $SERVER_USER@$SERVER_HOST 'journalctl -u $SERVICE_NAME -n 50'${NC}"
+        exit 1
+    fi
 else
-    echo -e "${RED}❌ Service failed to start${NC}"
-    echo -e "${YELLOW}Check logs: ssh $SERVER_USER@$SERVER_HOST 'journalctl -u $SERVICE_NAME -n 50'${NC}"
-    exit 1
+    echo -e "${GREEN}✅ Static site deployed - no service to restart${NC}"
 fi
 
 echo ""
@@ -262,15 +281,19 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo -e "${GREEN}📊 Summary:${NC}"
 echo -e "  Server: ${YELLOW}$SERVER_USER@$SERVER_HOST${NC}"
-echo -e "  Service: ${YELLOW}$SERVICE_NAME${NC}"
-echo -e "  Status: ${GREEN}✅ Running${NC}"
+if [ -n "$SERVICE_NAME" ]; then
+    echo -e "  Service: ${YELLOW}$SERVICE_NAME${NC}"
+    echo -e "  Status: ${GREEN}✅ Running${NC}"
+fi
 if [ "$BACKUP_ENABLED" = "true" ] && [ "$SKIP_BACKUP" = false ]; then
     echo -e "  Backup: ${YELLOW}$BACKUP_PATH${NC}"
 fi
 echo ""
 echo -e "${YELLOW}Useful commands:${NC}"
-echo -e "  • Check logs: ${BLUE}ssh $SERVER_USER@$SERVER_HOST 'journalctl -u $SERVICE_NAME -f'${NC}"
-echo -e "  • Check status: ${BLUE}ssh $SERVER_USER@$SERVER_HOST 'systemctl status $SERVICE_NAME'${NC}"
+if [ "$SERVER_TYPE" != "static-site" ] && [ -n "$SERVICE_NAME" ]; then
+    echo -e "  • Check logs: ${BLUE}$SSH_CMD $SERVER_USER@$SERVER_HOST 'journalctl -u $SERVICE_NAME -f'${NC}"
+    echo -e "  • Check status: ${BLUE}$SSH_CMD $SERVER_USER@$SERVER_HOST 'systemctl status $SERVICE_NAME'${NC}"
+fi
 if [ "$BACKUP_ENABLED" = "true" ]; then
     echo -e "  • Rollback: ${BLUE}./.devops/rollback.sh${NC}"
 fi

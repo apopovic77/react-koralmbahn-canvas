@@ -69,6 +69,8 @@ interface EventApiResponse {
   summary_en?: string | null;
   url?: string | null;
   published_at?: string | null;
+  sentiment?: number | null;
+  source_name?: string | null;
   tags?: string[] | null;
   media?: Array<{
     id?: string | null;
@@ -77,6 +79,7 @@ interface EventApiResponse {
     thumbnail_url?: string | null;
     source_url?: string | null;
     source_name?: string | null;
+    media_role?: string | null;
     storage_object?: {
       id?: number | string | null;
       mime_type?: string | null;
@@ -91,8 +94,10 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
 
   // Helper to check if a media item is a screenshot
   const isScreenshotMedia = (media: NonNullable<EventApiResponse['media']>[0]): boolean => {
+    const sourceName = media.source_name?.toLowerCase() || '';
     return !!(
-      media.source_name?.includes('Screenshot') ||
+      media.media_role === 'screenshot' ||
+      sourceName.includes('screenshot') ||
       media.url?.includes('#screenshot') ||
       media.url?.toLowerCase().includes('playwright') ||
       media.url?.toLowerCase().includes('screenshot')
@@ -144,6 +149,20 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
     screenshotUrl = screenshotMedia ? buildMediaUrl(screenshotMedia) : null;
   }
 
+  // Determine if the final imageUrl is a screenshot
+  // It is a screenshot if:
+  // 1. We have media
+  // 2. We didn't find a heroMedia (non-screenshot)
+  // 3. So we fell back to event.media[0] which MUST be a screenshot (otherwise it would be heroMedia)
+  // OR if the explicit logic says so.
+  let isImageScreenshot = false;
+  if (event.media && event.media.length > 0) {
+    const heroMedia = event.media.find(m => !isScreenshotMedia(m));
+    if (!heroMedia) {
+        isImageScreenshot = true;
+    }
+  }
+
   // DEBUG: Log screenshot detection
   const hasScreenshot = !!screenshotUrl;
   if (hasScreenshot || event.media?.some(m => isScreenshotMedia(m))) {
@@ -168,9 +187,11 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
     url: event.url || '#',
     imageUrl,
     screenshotUrl,
+    isImageScreenshot,
     publishedAt: event.published_at || null,
-    sourceName: event.media?.[0]?.source_name || null,
+    sourceName: event.source_name || event.media?.[0]?.source_name || null,
     category: event.tags?.[0] || null,
+    sentiment: event.sentiment,
   };
 }
 

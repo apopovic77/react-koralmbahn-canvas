@@ -7,10 +7,10 @@ import type { LayoutNode } from 'arkturian-canvas-engine/src/layout/LayoutNode';
 
 import { fetchKoralmEvents } from './api/koralmbahnApi';
 import type { CardStyle, KoralmEvent } from './types/koralmbahn';
-import QRCode from 'qrcode';
 import { useKioskMode } from './hooks/useKioskMode';
 import { useManualMode } from './hooks/useManualMode';
 import { useImageCache } from './hooks/useImageCache';
+import { QRCodeFactory } from './services/QRCodeFactory';
 import { DayTimelineLayouter, type DayAxisRow, type DayTimelineBounds, type DayTimelineLayouterConfig } from './layouts/DayTimelineLayouter';
 import { SingleRowTimelineLayouter, type SingleRowBounds } from './layouts/SingleRowTimelineLayouter';
 import { MasonryLayouter } from './layouts/MasonryLayouter';
@@ -360,33 +360,42 @@ function App() {
           ? `${baseUrl}/article/${event.id}` // Museum article page
           : event.url; // Original article URL
 
-        const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+        // Use QRCodeFactory to generate the image
+        const qrImg = await QRCodeFactory.generateImage(qrUrl, {
           width: 80,
           margin: 1,
-          color: {
-            dark: '#000000',
-            light: '#ffffff',
-          },
         });
 
-        const qrImg = new Image();
-        qrImg.onload = () => {
-          event.qrCode = qrImg;
-          completedCount++;
+        event.qrCode = qrImg;
+        completedCount++;
 
-          // Force re-render when all QR codes are ready
-          if (completedCount === totalCount) {
-            console.log(`[QR Codes] All ${totalCount} QR codes generated (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
-            setQrRenderTrigger(prev => prev + 1); // Force re-render
-          }
-        };
-        qrImg.src = qrDataUrl;
+        // Force re-render when all QR codes are ready
+        if (completedCount === totalCount) {
+          console.log(`[QR Codes] All ${totalCount} QR codes generated (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
+          setQrRenderTrigger(prev => prev + 1); // Force re-render
+        }
       } catch (error) {
         console.error(`[App] QR code generation failed for event ${event.id}:`, error);
         completedCount++;
       }
     });
   }, [events, useMuseumQR]);
+
+  useEffect(() => {
+    // Set overflow hidden for body/html when App is mounted
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.height = '100%';
+    document.body.style.height = '100%';
+
+    return () => {
+      // Reset when unmounted
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.height = '';
+      document.body.style.height = '';
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -589,14 +598,12 @@ function App() {
         event.preventDefault();
         setCardStyle((prev) => {
           let nextStyle: CardStyle;
-          if (prev === 'v1') {
-            nextStyle = 'v2';
-          } else if (prev === 'v2') {
+          if (prev === 'standard') {
             nextStyle = 'catalog';
           } else if (prev === 'catalog') {
             nextStyle = 'imageOnly';
           } else {
-            nextStyle = 'v1';
+            nextStyle = 'standard';
           }
           console.log(`[Card Style] Switching: ${prev} → ${nextStyle}`);
           return nextStyle;

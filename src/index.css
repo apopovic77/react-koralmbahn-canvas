@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 @font-face {
   font-family: 'Bricolage Grotesque';
@@ -23,8 +21,12 @@
   font-style: normal;
 }
 
+@theme {
+  --font-bricolage: 'Bricolage Grotesque', system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
 :root {
-  font-family: 'Bricolage Grotesque', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: var(--font-bricolage);
   line-height: 1.5;
   font-weight: 400;
 
@@ -49,8 +51,6 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
   min-height: 100vh;
 }

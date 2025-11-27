@@ -4,18 +4,26 @@
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
+/* Canvas-App specific styles - scoped to not interfere with other pages */
+:root:has(.app-container) html,
+:root:has(.app-container) body,
+:root:has(.app-container) #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
+/* Fallback for browsers without :has support - explicitly scope overflow hidden to where it's needed if possible, 
+   or assume manual handling. 
+   Since we can't easily scope 'body' styles from within a component without side effects,
+   we should move the overflow:hidden logic to the component mount/unmount or be specific.
+*/
+
 .app-container {
   position: relative;
   width: 100%;
   height: 100%;
+  overflow: hidden; /* Ensure app container clips */
 }
 
 .main-canvas {

@@ -19,9 +19,11 @@ export interface KoralmEvent {
   url: string;
   imageUrl: string | null;
   screenshotUrl?: string | null; // Playwright/PDF screenshot URL
+  isImageScreenshot?: boolean; // True if the main imageUrl is actually a screenshot
   publishedAt: string | null;
   sourceName: string | null;
   category: string | null;
+  sentiment?: number | null;
   x?: number;
   y?: number;
   width?: number;
