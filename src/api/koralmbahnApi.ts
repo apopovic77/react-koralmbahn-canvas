@@ -51,12 +51,8 @@ function resolveApiBaseUrl(): string {
     return 'http://localhost:8080';
   }
 
-  // Production: same origin
-  if (typeof window !== 'undefined' && window.location) {
-    return window.location.origin;
-  }
-
-  return '';
+  // Production: arkserver API
+  return 'http://arkserver.arkturian.com:8081';
 }
 
 interface EventApiResponse {
