@@ -288,7 +288,7 @@ export class EventCanvasRenderer {
   private drawCard(
     ctx: CanvasRenderingContext2D,
     event: KoralmEvent,
-    transitionState: { imageHeightPercent: number; textOpacity: number },
+    _transitionState: { imageHeightPercent: number; textOpacity: number },
     img: HTMLImageElement | null,
   ): void {
     const { padding } = this.options;
