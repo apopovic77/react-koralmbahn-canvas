@@ -27,6 +27,7 @@ jobs:
 
       - name: Add server to known hosts
         run: |
+          ssh-keyscan -H arkturian.com >> ~/.ssh/known_hosts 2>/dev/null || true
           ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Deploy via starter script
