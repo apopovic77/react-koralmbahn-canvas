@@ -13,9 +13,13 @@ const STORAGE_HOSTNAME = (() => {
   }
 })();
 
-// Toggle: Use imageproxy.php for CORS bypass instead of direct Storage API
-const USE_IMAGE_PROXY = import.meta.env.VITE_USE_IMAGE_PROXY === 'true';
+// Image source mode: storage, proxy, or local
+type ImageSourceMode = 'storage' | 'proxy' | 'local';
+const IMAGE_SOURCE: ImageSourceMode =
+  (import.meta.env.VITE_IMAGE_SOURCE as ImageSourceMode) || 'storage';
+
 const IMAGE_PROXY_URL = 'https://share.arkturian.com/imageproxy.php';
+const LOCAL_FS_URL = 'https://share.arkturian.com/events.php';
 
 function buildStorageMediaUrl(
   id: string | number,
@@ -107,7 +111,21 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
   };
 
   // Helper to build media URL
-  const buildMediaUrl = (media: NonNullable<EventApiResponse['media']>[0]): string | null => {
+  const buildMediaUrl = (
+    media: NonNullable<EventApiResponse['media']>[0],
+    eventId: number | null
+  ): string | null => {
+    // Local filesystem mode - use events.php
+    if (IMAGE_SOURCE === 'local' && eventId) {
+      const localUrl = new URL(LOCAL_FS_URL);
+      localUrl.searchParams.set('event_id', String(eventId));
+      // Add transformation params if needed (optional)
+      // localUrl.searchParams.set('width', '1200');
+      // localUrl.searchParams.set('format', 'webp');
+      return localUrl.toString();
+    }
+
+    // Storage or proxy mode - build Storage API URL
     const storageHost = STORAGE_HOSTNAME;
     const isStorageUrl = (() => {
       if (!media?.url) return false;
@@ -137,8 +155,8 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
       finalUrl = buildStorageMediaUrl(storageId!, params);
     }
 
-    // Wrap with imageproxy if enabled
-    if (finalUrl && USE_IMAGE_PROXY) {
+    // Wrap with imageproxy if proxy mode enabled
+    if (finalUrl && IMAGE_SOURCE === 'proxy') {
       const proxyUrl = new URL(IMAGE_PROXY_URL);
       proxyUrl.searchParams.set('url', finalUrl);
       return proxyUrl.toString();
@@ -151,14 +169,16 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
   let imageUrl: string | null = null;
   let screenshotUrl: string | null = null;
 
+  const eventId = event.event_id ?? null;
+
   if (event.media && event.media.length > 0) {
     // Find first non-screenshot (hero image)
     const heroMedia = event.media.find(m => !isScreenshotMedia(m));
     // Find first screenshot
     const screenshotMedia = event.media.find(m => isScreenshotMedia(m));
 
-    imageUrl = heroMedia ? buildMediaUrl(heroMedia) : buildMediaUrl(event.media[0]);
-    screenshotUrl = screenshotMedia ? buildMediaUrl(screenshotMedia) : null;
+    imageUrl = heroMedia ? buildMediaUrl(heroMedia, eventId) : buildMediaUrl(event.media[0], eventId);
+    screenshotUrl = screenshotMedia ? buildMediaUrl(screenshotMedia, eventId) : null;
   }
 
   // Determine if the final imageUrl is a screenshot
