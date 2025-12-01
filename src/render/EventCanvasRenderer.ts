@@ -288,7 +288,7 @@ export class EventCanvasRenderer {
   private drawCard(
     ctx: CanvasRenderingContext2D,
     event: KoralmEvent,
-    _transitionState: { imageHeightPercent: number; textOpacity: number },
+    transitionState: { imageHeightPercent: number; textOpacity: number },
     img: HTMLImageElement | null,
   ): void {
     const { padding } = this.options;
@@ -323,8 +323,14 @@ export class EventCanvasRenderer {
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, width, height);
 
-    // Standard card style: Fixed 50% image, 50% text split
-    const imageHeight = Math.floor(height * 0.5);
+    // LOD-based dynamic image height:
+    // - Detail mode (zoomed in): 2/3 image (0.667), 1/3 text
+    // - Image-only mode (zoomed out): 100% image, no text
+    // Scale from 0.667 to 1.0 based on LOD transition (0.45→1.0 becomes 0.667→1.0)
+    const detailImageRatio = 0.667; // 2/3 for detail mode
+    const lodProgress = (transitionState.imageHeightPercent - 0.45) / (1.0 - 0.45); // 0 to 1
+    const imageHeightPercent = detailImageRatio + lodProgress * (1.0 - detailImageRatio);
+    const imageHeight = Math.floor(height * Math.min(1.0, Math.max(detailImageRatio, imageHeightPercent)));
 
     if (img && img.complete) {
       ctx.save();
@@ -357,91 +363,67 @@ export class EventCanvasRenderer {
 
       ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
       ctx.restore();
-
-      // DEBUG: Screenshot detection marker
-      if (isScreenshotImage) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
-        ctx.fillRect(x + 5, y + 5, 90, 20);
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText('SCREENSHOT', x + 10, y + 19);
-        ctx.restore();
-      }
-
-      // DEBUG: Card style marker
-      ctx.save();
-      const debugY = isScreenshotImage ? y + 30 : y + 5;
-      const debugColor = 'rgba(0, 255, 0, 0.8)';
-      const debugText = `STYLE: ${event.cardStyle || 'standard'}`;
-      const debugWidth = 120;
-      ctx.fillStyle = debugColor;
-      ctx.fillRect(x + 5, debugY, debugWidth, 20);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px monospace';
-      ctx.fillText(debugText, x + 10, debugY + 14);
-
-      // Show imageHeight percentage for debugging
-      const imagePercent = Math.round((imageHeight / height) * 100);
-      ctx.fillStyle = 'rgba(0, 0, 255, 0.8)';
-      ctx.fillRect(x + 5, debugY + 25, 100, 20);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(`IMG: ${imagePercent}%`, x + 10, debugY + 39);
-      ctx.restore();
     } else {
       ctx.fillStyle = '#e0e0e0';
       ctx.fillRect(x, y, width, imageHeight);
     }
 
-    // Standard card style: Always show text at full opacity (no LOD transitions)
-    ctx.globalAlpha = 1.0;
-    const textStartY = y + imageHeight + padding;
+    // DEBUG: ID overlay on image (top left)
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(x + 4, y + 4, 70, 16);
+    ctx.fillStyle = '#fff';
+    ctx.font = '9px monospace';
+    ctx.fillText(`ID: ${event.id}`, x + 8, y + 15);
+    ctx.restore();
+
+    // LOD-based text opacity - smooth fade in/out based on zoom level
+    // Skip text rendering entirely when opacity is near zero for performance
+    if (transitionState.textOpacity < 0.01) {
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    ctx.globalAlpha = transitionState.textOpacity;
+    const textStartY = y + imageHeight + padding * 0.5;
     const textStartX = x + padding;
     const textWidth = width - padding * 2;
 
-    // QR-Code klein (35px) rechts oben
-    const qrSize = 35;
-    const qrMargin = 8;
+    // QR-Code klein (30px) rechts oben im Textbereich
+    const qrSize = 30;
+    const qrMargin = 6;
 
     if (event.qrCode && event.qrCode.complete) {
       const qrX = x + width - qrSize - padding;
       const qrY = textStartY;
       ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-      ctx.shadowBlur = 3;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+      ctx.shadowBlur = 2;
       ctx.fillStyle = '#fff';
       ctx.fillRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4);
       ctx.restore();
       ctx.drawImage(event.qrCode, qrX, qrY, qrSize, qrSize);
     }
 
-    // Titel mit Platz für QR-Code rechts
+    // Titel (11px, 2 Zeilen max)
     const titleWidth = textWidth - qrSize - qrMargin;
     ctx.fillStyle = '#1a1a1a';
-    ctx.font = 'bold 13px "Bricolage Grotesque", sans-serif';
-    this.drawMultilineText(ctx, event.title, textStartX, textStartY, titleWidth, 13, 3, 16);
+    ctx.font = 'bold 11px "Bricolage Grotesque", sans-serif';
+    let textOffset = this.drawMultilineText(ctx, event.title, textStartX, textStartY, titleWidth, 11, 2, 13);
 
-    let textOffset = textStartY + 3 * 16 + 6;
-
+    // Subtitle (9px, volle Länge)
     if (event.subtitle || event.sourceName) {
+      textOffset += 2;
       ctx.fillStyle = '#666';
-      ctx.font = '10px "Bricolage Grotesque", sans-serif';
-      textOffset = this.drawMultilineText(ctx, event.subtitle || event.sourceName || '', textStartX, textOffset, textWidth, 10, 1, 14);
+      ctx.font = '9px "Bricolage Grotesque", sans-serif';
+      textOffset = this.drawMultilineText(ctx, event.subtitle || event.sourceName || '', textStartX, textOffset, textWidth, 9, 2, 11);
     }
 
-    ctx.fillStyle = '#444';
-    ctx.font = '11px "Bricolage Grotesque", sans-serif';
-    textOffset = this.drawMultilineText(ctx, event.summary, textStartX, textOffset, textWidth, 11, 3, 14, true);
-
-    ctx.fillStyle = '#999';
-    ctx.font = '9px monospace';
-    ctx.fillText(`ID: ${event.id}`, textStartX, textOffset);
-    textOffset += 12;
-
-    // URL mit Umbruch anzeigen (max 3 Zeilen)
-    ctx.fillStyle = '#0066cc';
-    ctx.font = '8px monospace';
-    textOffset = this.drawMultilineText(ctx, event.url, textStartX, textOffset, textWidth, 8, 3, 10);
+    // Summary (9px, 4 Zeilen)
+    textOffset += 2;
+    ctx.fillStyle = '#555';
+    ctx.font = '9px "Bricolage Grotesque", sans-serif';
+    this.drawMultilineText(ctx, event.summary, textStartX, textOffset, textWidth, 9, 4, 11, true);
 
     ctx.globalAlpha = 1;
   }
@@ -508,17 +490,6 @@ export class EventCanvasRenderer {
 
       ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
       ctx.restore();
-
-      // DEBUG: Screenshot detection marker
-      if (isScreenshotImage) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
-        ctx.fillRect(x + 5, y + 5, 90, 20);
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText('SCREENSHOT', x + 10, y + 19);
-        ctx.restore();
-      }
     } else {
       // Placeholder while loading
       ctx.fillStyle = '#f5f5f5';
@@ -590,22 +561,8 @@ export class EventCanvasRenderer {
       ctx.beginPath();
       ctx.rect(x, currentY, imageWidth, imageHeight);
       ctx.clip();
-
-      // Check if screenshot for top-alignment
-      const isScreenshotImage = this.isScreenshot(event);
       ctx.drawImage(img, x, currentY, imageWidth, imageHeight);
       ctx.restore();
-
-      // DEBUG: Screenshot detection marker
-      if (isScreenshotImage) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
-        ctx.fillRect(x + 5, currentY + 5, 90, 20);
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText('SCREENSHOT', x + 10, currentY + 19);
-        ctx.restore();
-      }
 
       currentY += imageHeight + padding;
     } else {

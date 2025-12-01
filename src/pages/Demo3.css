@@ -1,0 +1,261 @@
+/**
+ * Demo3 Page Layout - Cyberpunk Theme
+ *
+ * Design System:
+ * - Primary: Cyan (#00fff2)
+ * - Secondary: Magenta (#ff00ff)
+ * - Background: Dark blue (#050810)
+ * - Animated grid background
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+/* Container */
+.demo3 {
+  font-family: 'Rajdhani', sans-serif;
+  background: #050810;
+  min-height: 100vh;
+  padding: 2rem 1.5rem;
+  color-scheme: dark;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Animated Background Grid */
+.demo3__bg-grid {
+  position: fixed;
+  inset: 0;
+  opacity: 0.05;
+  background-image:
+    linear-gradient(to right, #00fff2 1px, transparent 1px),
+    linear-gradient(to bottom, #00fff2 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+  animation: grid-move 20s linear infinite;
+}
+
+@keyframes grid-move {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(50px, 50px); }
+}
+
+/* Background Glow */
+.demo3__bg-glow {
+  position: fixed;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    ellipse at 30% 20%,
+    rgba(0, 255, 242, 0.08) 0%,
+    transparent 50%
+  ),
+  radial-gradient(
+    ellipse at 70% 80%,
+    rgba(255, 0, 255, 0.05) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+  animation: glow-shift 15s ease-in-out infinite alternate;
+}
+
+@keyframes glow-shift {
+  0% { transform: translate(0, 0) rotate(0deg); }
+  100% { transform: translate(-5%, -5%) rotate(5deg); }
+}
+
+/* Loading State */
+.demo3-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #050810;
+  color: #00fff2;
+  gap: 1.5rem;
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.demo3-loading__spinner {
+  width: 60px;
+  height: 60px;
+  border: 3px solid rgba(0, 255, 242, 0.2);
+  border-top-color: #00fff2;
+  border-radius: 50%;
+  animation: demo3-spin 1s linear infinite;
+  box-shadow: 0 0 20px rgba(0, 255, 242, 0.3);
+}
+
+@keyframes demo3-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.demo3-loading__text {
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  animation: text-blink 1s ease-in-out infinite;
+}
+
+@keyframes text-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Header */
+.demo3__header {
+  text-align: center;
+  margin-bottom: 3rem;
+  position: relative;
+  z-index: 10;
+}
+
+.demo3__logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.demo3__logo-icon {
+  font-size: 1.5rem;
+  color: #00fff2;
+  text-shadow: 0 0 10px #00fff2;
+  animation: icon-pulse 2s ease-in-out infinite;
+}
+
+@keyframes icon-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+.demo3__logo-text {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #a0aec0;
+  letter-spacing: 0.3em;
+}
+
+.demo3__title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: #ffffff;
+  margin: 0 0 0.5rem 0;
+  text-shadow:
+    0 0 20px rgba(0, 255, 242, 0.5),
+    0 0 40px rgba(0, 255, 242, 0.3);
+}
+
+.demo3__subtitle {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #00fff2;
+  letter-spacing: 0.2em;
+  margin: 0 0 1.5rem 0;
+}
+
+.demo3__subtitle-prefix {
+  color: #ff00ff;
+  font-weight: 700;
+}
+
+.demo3__cursor {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Stats */
+.demo3__stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(0, 255, 242, 0.05);
+  border: 1px solid rgba(0, 255, 242, 0.2);
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+}
+
+.demo3__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.demo3__stat-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #00fff2;
+  text-shadow: 0 0 10px rgba(0, 255, 242, 0.5);
+}
+
+.demo3__stat-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.15em;
+}
+
+.demo3__stat-divider {
+  color: rgba(0, 255, 242, 0.3);
+  font-size: 1.5rem;
+}
+
+/* Cards Grid - Masonry Layout */
+.demo3__grid {
+  display: flex;
+  gap: 1.5rem;
+  max-width: 1800px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 10;
+}
+
+.demo3__column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 639px) {
+  .demo3 {
+    padding: 1.5rem 1rem;
+  }
+
+  .demo3__title {
+    font-size: 1.5rem;
+  }
+
+  .demo3__subtitle {
+    font-size: 0.875rem;
+  }
+
+  .demo3__stats {
+    padding: 0.5rem 1rem;
+  }
+
+  .demo3__stat-value {
+    font-size: 1rem;
+  }
+
+  .demo3__grid {
+    gap: 1rem;
+  }
+
+  .demo3__column {
+    gap: 1rem;
+  }
+}

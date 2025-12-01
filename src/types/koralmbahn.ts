@@ -23,7 +23,6 @@ export interface KoralmEvent {
   publishedAt: string | null;
   sourceName: string | null;
   category: string | null;
-  sentiment?: number | null;
   x?: number;
   y?: number;
   width?: number;

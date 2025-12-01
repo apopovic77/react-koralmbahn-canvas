@@ -1,0 +1,423 @@
+/**
+ * PremiumCardV2 - Cyberpunk/Tech Style
+ *
+ * Design System:
+ * - Primary: Cyan (#00fff2)
+ * - Secondary: Magenta (#ff00ff)
+ * - Background: Dark blue (#0a0f1a)
+ * - Topographic pattern overlay
+ * - Neon glow effects
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap');
+
+/* Link wrapper */
+.cyberpunk-card-link {
+  display: block;
+  text-decoration: none;
+}
+
+/* Card Container */
+.cyberpunk-card {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #0a0f1a;
+  transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+  cursor: pointer;
+  will-change: transform;
+}
+
+/* Topographic Background Pattern */
+.cyberpunk-card__topo-bg {
+  position: absolute;
+  inset: 0;
+  opacity: 0.15;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'%3E%3Cpath fill='none' stroke='%2300fff2' stroke-width='0.5' d='M0 50 Q100 30 200 50 T400 50 M0 100 Q100 80 200 100 T400 100 M0 150 Q100 130 200 150 T400 150 M0 200 Q100 180 200 200 T400 200 M0 250 Q100 230 200 250 T400 250 M0 300 Q100 280 200 300 T400 300 M0 350 Q100 330 200 350 T400 350'/%3E%3C/svg%3E");
+  background-size: 100% auto;
+  background-repeat: repeat-y;
+  pointer-events: none;
+}
+
+/* Technical Grid Overlay */
+.cyberpunk-card__grid-overlay {
+  position: absolute;
+  inset: 0;
+  opacity: 0.08;
+  background-image:
+    linear-gradient(to right, #00fff2 1px, transparent 1px),
+    linear-gradient(to bottom, #00fff2 1px, transparent 1px);
+  background-size: 30px 30px;
+  pointer-events: none;
+}
+
+/* Vertical Timeline/Track */
+.cyberpunk-card__timeline {
+  position: absolute;
+  left: 15%;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  z-index: 5;
+}
+
+.cyberpunk-card__timeline-glow {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    #00fff2 0%,
+    #00fff2 40%,
+    #ff00ff 60%,
+    #ff00ff 100%
+  );
+  box-shadow:
+    0 0 10px #00fff2,
+    0 0 20px #00fff2,
+    0 0 40px rgba(0, 255, 242, 0.5);
+  animation: timeline-pulse 3s ease-in-out infinite;
+}
+
+@keyframes timeline-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    box-shadow:
+      0 0 10px #00fff2,
+      0 0 20px #00fff2,
+      0 0 40px rgba(0, 255, 242, 0.5);
+  }
+  50% {
+    opacity: 1;
+    box-shadow:
+      0 0 15px #00fff2,
+      0 0 30px #00fff2,
+      0 0 60px rgba(0, 255, 242, 0.7);
+  }
+}
+
+/* Film Strip */
+.cyberpunk-card__filmstrip {
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 4px,
+    rgba(0, 255, 242, 0.3) 4px,
+    rgba(0, 255, 242, 0.3) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+}
+
+/* Neon Border */
+.cyberpunk-card__neon-border {
+  position: absolute;
+  inset: 8px;
+  border-radius: 0.75rem;
+  pointer-events: none;
+  z-index: 10;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(#0a0f1a, #0a0f1a) padding-box,
+    linear-gradient(135deg, #00fff2 0%, #00fff2 30%, #ff00ff 70%, #ff00ff 100%) border-box;
+  box-shadow:
+    0 0 15px rgba(0, 255, 242, 0.4),
+    0 0 30px rgba(0, 255, 242, 0.2),
+    inset 0 0 15px rgba(0, 255, 242, 0.1);
+  animation: border-glow 4s ease-in-out infinite;
+}
+
+@keyframes border-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 15px rgba(0, 255, 242, 0.4),
+      0 0 30px rgba(0, 255, 242, 0.2),
+      inset 0 0 15px rgba(0, 255, 242, 0.1);
+  }
+  50% {
+    box-shadow:
+      0 0 20px rgba(255, 0, 255, 0.4),
+      0 0 40px rgba(255, 0, 255, 0.2),
+      inset 0 0 20px rgba(255, 0, 255, 0.1);
+  }
+}
+
+/* Content */
+.cyberpunk-card__content {
+  position: relative;
+  z-index: 15;
+  height: 100%;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header Badges */
+.cyberpunk-card__badges {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  margin-left: 15%;
+}
+
+.cyberpunk-card__date-badge {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a0aec0;
+  letter-spacing: 0.05em;
+}
+
+.cyberpunk-card__status-badge {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.cyberpunk-card__status-badge--cyan {
+  color: #00fff2;
+  text-shadow: 0 0 10px rgba(0, 255, 242, 0.8);
+}
+
+.cyberpunk-card__status-badge--magenta {
+  color: #ff00ff;
+  text-shadow: 0 0 10px rgba(255, 0, 255, 0.8);
+}
+
+/* Title */
+.cyberpunk-card__title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1.2;
+  color: #ffffff;
+  margin: 0 0 1.5rem 15%;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Image Container */
+.cyberpunk-card__image-container {
+  position: relative;
+  flex: 1;
+  margin: 0 0.5rem;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(0, 255, 242, 0.3);
+}
+
+.cyberpunk-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  filter: saturate(0.9) contrast(1.1);
+}
+
+.cyberpunk-card__image-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 30px rgba(0, 255, 242, 0.2),
+    inset 0 0 60px rgba(0, 0, 0, 0.5);
+}
+
+/* QR Section */
+.cyberpunk-card__qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.cyberpunk-card__qr-frame {
+  position: relative;
+  padding: 8px;
+  background: rgba(0, 255, 242, 0.1);
+  border: 1px solid rgba(0, 255, 242, 0.4);
+  border-radius: 8px;
+}
+
+.cyberpunk-card__qr-frame::before,
+.cyberpunk-card__qr-frame::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #00fff2;
+}
+
+.cyberpunk-card__qr-frame::before {
+  top: -4px;
+  left: -4px;
+  border-right: none;
+  border-bottom: none;
+}
+
+.cyberpunk-card__qr-frame::after {
+  bottom: -4px;
+  right: -4px;
+  border-left: none;
+  border-top: none;
+}
+
+.cyberpunk-card__qr {
+  display: block;
+  filter: brightness(1.1);
+}
+
+.cyberpunk-card__qr-text {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #00fff2;
+  letter-spacing: 0.15em;
+  margin-top: 0.75rem;
+  text-shadow: 0 0 10px rgba(0, 255, 242, 0.5);
+  animation: text-flicker 4s ease-in-out infinite;
+}
+
+@keyframes text-flicker {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+  52% { opacity: 0.6; }
+  54% { opacity: 1; }
+}
+
+/* Corner Decorations */
+.cyberpunk-card__corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.cyberpunk-card__corner::before,
+.cyberpunk-card__corner::after {
+  content: '';
+  position: absolute;
+  background: #00fff2;
+  box-shadow: 0 0 5px #00fff2;
+}
+
+.cyberpunk-card__corner--tl {
+  top: 4px;
+  left: 4px;
+}
+.cyberpunk-card__corner--tl::before {
+  width: 15px;
+  height: 2px;
+  top: 0;
+  left: 0;
+}
+.cyberpunk-card__corner--tl::after {
+  width: 2px;
+  height: 15px;
+  top: 0;
+  left: 0;
+}
+
+.cyberpunk-card__corner--tr {
+  top: 4px;
+  right: 4px;
+}
+.cyberpunk-card__corner--tr::before {
+  width: 15px;
+  height: 2px;
+  top: 0;
+  right: 0;
+}
+.cyberpunk-card__corner--tr::after {
+  width: 2px;
+  height: 15px;
+  top: 0;
+  right: 0;
+}
+
+.cyberpunk-card__corner--bl {
+  bottom: 4px;
+  left: 4px;
+}
+.cyberpunk-card__corner--bl::before {
+  width: 15px;
+  height: 2px;
+  bottom: 0;
+  left: 0;
+}
+.cyberpunk-card__corner--bl::after {
+  width: 2px;
+  height: 15px;
+  bottom: 0;
+  left: 0;
+}
+
+.cyberpunk-card__corner--br {
+  bottom: 4px;
+  right: 4px;
+}
+.cyberpunk-card__corner--br::before {
+  width: 15px;
+  height: 2px;
+  bottom: 0;
+  right: 0;
+}
+.cyberpunk-card__corner--br::after {
+  width: 2px;
+  height: 15px;
+  bottom: 0;
+  right: 0;
+}
+
+/* Hover Effects */
+.cyberpunk-card:hover .cyberpunk-card__neon-border {
+  box-shadow:
+    0 0 25px rgba(0, 255, 242, 0.6),
+    0 0 50px rgba(0, 255, 242, 0.3),
+    inset 0 0 25px rgba(0, 255, 242, 0.15);
+}
+
+.cyberpunk-card:hover .cyberpunk-card__timeline-glow {
+  box-shadow:
+    0 0 20px #00fff2,
+    0 0 40px #00fff2,
+    0 0 80px rgba(0, 255, 242, 0.7);
+}
+
+.cyberpunk-card:hover .cyberpunk-card__image {
+  filter: saturate(1.1) contrast(1.15);
+}
+
+/* Responsive */
+@media (max-width: 639px) {
+  .cyberpunk-card__title {
+    font-size: 1.2rem;
+  }
+
+  .cyberpunk-card__badges {
+    margin-left: 20%;
+  }
+
+  .cyberpunk-card__title {
+    margin-left: 20%;
+  }
+
+  .cyberpunk-card__date-badge,
+  .cyberpunk-card__status-badge {
+    font-size: 0.75rem;
+  }
+}

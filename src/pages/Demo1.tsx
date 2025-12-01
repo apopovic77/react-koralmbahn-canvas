@@ -62,38 +62,40 @@ export default function Demo1() {
     );
   }
 
+  // Gap between cards (same as outer padding for consistency)
+  const GAP = 32; // pixels
+
   return (
-    <div className="min-h-screen bg-white p-8 font-bricolage">
-      <div className="w-full mx-auto">
-        <div className="flex flex-col items-center mb-12">
-          <h1 className="text-4xl font-bold text-center text-black mb-6">Mehr zur Koralmbahn</h1>
-          
-          {/* Toggle Switch */}
-          <div className="flex items-center space-x-3 bg-gray-100 p-2 rounded-full">
-            <span className={`text-sm font-medium ${!hideScreenshots ? 'text-gray-900' : 'text-gray-500'}`}>Alle Bilder</span>
-            <button
-              onClick={() => setHideScreenshots(!hideScreenshots)}
-              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                hideScreenshots ? 'bg-[#CC0000]' : 'bg-gray-300'
+    <div className="min-h-screen bg-white font-bricolage" style={{ padding: GAP }}>
+      <div className="flex flex-col items-center mb-12">
+        <h1 className="text-4xl font-bold text-center text-black mb-6">Mehr zur Koralmbahn</h1>
+
+        {/* Toggle Switch */}
+        <div className="flex items-center space-x-3 bg-gray-100 p-2 rounded-full">
+          <span className={`text-sm font-medium ${!hideScreenshots ? 'text-gray-900' : 'text-gray-500'}`}>Alle Bilder</span>
+          <button
+            onClick={() => setHideScreenshots(!hideScreenshots)}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              hideScreenshots ? 'bg-[#CC0000]' : 'bg-gray-300'
+            }`}
+            role="switch"
+            aria-checked={hideScreenshots}
+          >
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                hideScreenshots ? 'translate-x-5' : 'translate-x-0'
               }`}
-              role="switch"
-              aria-checked={hideScreenshots}
-            >
-              <span
-                aria-hidden="true"
-                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                  hideScreenshots ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-            <span className={`text-sm font-medium ${hideScreenshots ? 'text-[#CC0000]' : 'text-gray-500'}`}>Keine Screenshots</span>
-          </div>
+            />
+          </button>
+          <span className={`text-sm font-medium ${hideScreenshots ? 'text-[#CC0000]' : 'text-gray-500'}`}>Keine Screenshots</span>
         </div>
-        
-        {/* JS-based Masonry Layout */}
-        <div className="flex gap-8 items-start">
-          {columns.map((colEvents, colIndex) => (
-            <div key={colIndex} className="flex-1 flex flex-col gap-8">
+      </div>
+
+      {/* JS-based Masonry Layout */}
+      <div className="flex items-start" style={{ gap: GAP }}>
+        {columns.map((colEvents, colIndex) => (
+          <div key={colIndex} className="flex-1 flex flex-col" style={{ gap: GAP }}>
               {colEvents.map((event) => {
                 // Logic: 
                 // 1. Determine the image source (URL).
@@ -113,80 +115,43 @@ export default function Demo1() {
                 return (
                   <article 
                     key={event.id} 
-                    className="bg-white rounded-lg shadow-md border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow duration-300"
-                    style={{ padding: '24px' }}
+                    className="bg-white rounded-lg shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow duration-300 p-6"
                   >
-                    {/* Card Body Wrapper with explicit padding style as fallback */}
-                    <div style={{ width: '100%' }}>
-                      {/* Image Section */}
-                      {displayImage && shouldShowImage && (
-                        <div className="w-full h-auto overflow-hidden rounded-md mb-6">
-                          <img 
-                            src={displayImage} 
-                            alt={event.title}
-                            className="w-full h-auto object-cover block"
-                            loading="lazy"
-                          />
-                        </div>
-                      )}
+                    {/* Image Section */}
+                    {displayImage && shouldShowImage && (
+                      <div className="w-full h-auto overflow-hidden rounded-md mb-6">
+                        <img 
+                          src={displayImage} 
+                          alt={event.title}
+                          className="w-full h-auto object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
 
-                      {/* Content Section */}
-                      <div>
-                        <h2 className="text-xl font-bold text-gray-900 mb-2 leading-tight">
-                          {event.title}
-                        </h2>
+                    {/* Content Section */}
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900 mb-4 leading-tight">
+                        {event.title}
+                      </h2>
 
-                        <div className="flex flex-wrap gap-y-1 gap-x-3 text-xs text-gray-500 mb-4">
-                          {event.publishedAt && (
-                            <span className="flex items-center">
-                              📅 {new Date(event.publishedAt).toLocaleString('de-DE', {
-                                day: '2-digit',
-                                month: '2-digit',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                          )}
-                          
-                          {event.sourceName && (
-                            <span className="flex items-center font-medium text-blue-600">
-                              📰 {event.sourceName}
-                            </span>
-                          )}
+                      <p className="text-gray-600 text-sm leading-relaxed mb-6">
+                        {event.summary}
+                      </p>
 
-                          {typeof event.sentiment === 'number' && (
-                            <span className={`flex items-center font-medium ${
-                              event.sentiment > 0.3 ? 'text-green-600' : 
-                              event.sentiment < -0.3 ? 'text-red-600' : 
-                              'text-gray-500'
-                            }`}>
-                              {event.sentiment > 0.3 ? '😊 Positiv' : 
-                               event.sentiment < -0.3 ? '😠 Negativ' : 
-                               '😐 Neutral'}
-                            </span>
-                          )}
-                        </div>
-
-                        <p className="text-gray-600 text-sm leading-relaxed mb-6">
-                          {event.summary}
-                        </p>
-
-                        <div className="pt-6 border-t border-gray-100 flex justify-start">
-                          <QRCodeDisplay 
-                            url={event.url} 
-                            size={64} 
-                            className="border border-gray-200 p-1 rounded"
-                          />
-                        </div>
+                      <div className="pt-6 border-t border-gray-100 flex justify-start">
+                        <QRCodeDisplay
+                          url={event.url}
+                          size={64}
+                          className="border border-gray-200 p-1 rounded"
+                        />
                       </div>
                     </div>
                   </article>
                 );
               })}
-            </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
     </div>
   );

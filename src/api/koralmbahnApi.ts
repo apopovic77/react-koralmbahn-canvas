@@ -1,6 +1,6 @@
 import type { KoralmEvent } from '../types/koralmbahn';
 
-const DEFAULT_STORAGE_BASE_URL = 'https://api-storage.arkserver.arkturian.com';
+const DEFAULT_STORAGE_BASE_URL = 'https://api-storage.arkturian.com';
 const STORAGE_BASE_URL =
   (import.meta.env.VITE_KORALMBAHN_STORAGE_URL as string | undefined)?.replace(/\/+$/, '') ??
   DEFAULT_STORAGE_BASE_URL;
@@ -12,6 +12,10 @@ const STORAGE_HOSTNAME = (() => {
     return undefined;
   }
 })();
+
+// Toggle: Use imageproxy.php for CORS bypass instead of direct Storage API
+const USE_IMAGE_PROXY = import.meta.env.VITE_USE_IMAGE_PROXY === 'true';
+const IMAGE_PROXY_URL = 'https://share.arkturian.com/imageproxy.php';
 
 function buildStorageMediaUrl(
   id: string | number,
@@ -51,8 +55,12 @@ function resolveApiBaseUrl(): string {
     return 'http://localhost:8080';
   }
 
-  // Production: arkserver API
-  return 'http://arkserver.arkturian.com:8081';
+  // Production: same origin
+  if (typeof window !== 'undefined' && window.location) {
+    return window.location.origin;
+  }
+
+  return '';
 }
 
 interface EventApiResponse {
@@ -65,8 +73,6 @@ interface EventApiResponse {
   summary_en?: string | null;
   url?: string | null;
   published_at?: string | null;
-  sentiment?: number | null;
-  source_name?: string | null;
   tags?: string[] | null;
   media?: Array<{
     id?: string | null;
@@ -113,8 +119,10 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
       }
     })();
 
+    let finalUrl: string | null = null;
+
     if (isStorageUrl && media?.url) {
-      return media.url;
+      finalUrl = media.url;
     } else if (media?.id || media?.storage_object?.id) {
       const storageId = media.id || media.storage_object?.id;
       const mimeType = media.storage_object?.mime_type;
@@ -126,9 +134,17 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
         params.aspect_ratio = '5:7';
       }
 
-      return buildStorageMediaUrl(storageId!, params);
+      finalUrl = buildStorageMediaUrl(storageId!, params);
     }
-    return null;
+
+    // Wrap with imageproxy if enabled
+    if (finalUrl && USE_IMAGE_PROXY) {
+      const proxyUrl = new URL(IMAGE_PROXY_URL);
+      proxyUrl.searchParams.set('url', finalUrl);
+      return proxyUrl.toString();
+    }
+
+    return finalUrl;
   };
 
   // Extract both hero image and screenshot URLs
@@ -185,9 +201,8 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
     screenshotUrl,
     isImageScreenshot,
     publishedAt: event.published_at || null,
-    sourceName: event.source_name || event.media?.[0]?.source_name || null,
+    sourceName: event.media?.[0]?.source_name || null,
     category: event.tags?.[0] || null,
-    sentiment: event.sentiment,
   };
 }
 
