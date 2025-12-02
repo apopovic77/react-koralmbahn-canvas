@@ -119,7 +119,6 @@ export default function ArticlePageV2() {
       <div className="article-v2-error">
         <h1>Artikel nicht gefunden</h1>
         <p>Der angeforderte Artikel konnte nicht geladen werden.</p>
-        <a href="/" className="back-home">← Zurück zur Übersicht</a>
       </div>
     );
   }
@@ -240,9 +239,6 @@ export default function ArticlePageV2() {
               Originalartikel lesen →
             </a>
           )}
-          <a href="/" className="action-button secondary">
-            ← Zurück zur Übersicht
-          </a>
         </div>
 
         {/* Footer */}

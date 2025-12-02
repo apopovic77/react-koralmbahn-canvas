@@ -86,7 +86,7 @@ function App() {
   const [showSciFiDashboard, setShowSciFiDashboard] = useState(false); // F6 toggle
   const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimelinePortrait'); // F8: Layout Mode (Default: dayTimelinePortrait)
-  const [useScreenshotsOnly, setUseScreenshotsOnly] = useState(false); // F9: Screenshots Only (Default: OFF)
+  const [showDebugPanel, setShowDebugPanel] = useState(false); // F9: Debug Panel (Default: OFF)
   const [cardStyle, setCardStyle] = useState<CardStyle>('imageOnly'); // F10: Card Style (Default: imageOnly)
   const [useMuseumQR, setUseMuseumQR] = useState(true); // F11: Museum QR Codes (Default: ON - show museum page instead of original article)
   const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all'); // Sentiment filter
@@ -141,22 +141,8 @@ function App() {
       });
     }
 
-    // Transform: Screenshots Only mode
-    if (useScreenshotsOnly) {
-      filtered = filtered.map(event => {
-        if (event.screenshotUrl) {
-          return {
-            ...event,
-            imageUrl: event.screenshotUrl,
-            sourceName: 'Article Screenshot',
-          };
-        }
-        return event;
-      });
-    }
-
     return filtered;
-  }, [events, useScreenshotsOnly, heroImageOnly, sentimentFilter]);
+  }, [events, heroImageOnly, sentimentFilter]);
 
   useEffect(() => {
     rendererRef.current = new EventCanvasRenderer({
@@ -649,8 +635,8 @@ function App() {
       }
       if (event.key === 'F9') {
         event.preventDefault();
-        setUseScreenshotsOnly((prev) => {
-          console.log(`[Screenshots Only] ${!prev ? 'ENABLED' : 'DISABLED'}`);
+        setShowDebugPanel((prev) => {
+          console.log(`[Debug Panel] ${!prev ? 'VISIBLE' : 'HIDDEN'}`);
           return !prev;
         });
       }
@@ -762,7 +748,8 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Debug Panel */}
+      {/* Debug Panel - Toggle with F9 */}
+      {showDebugPanel && (
       <div style={{
         position: 'fixed',
         top: '10px',
@@ -779,13 +766,12 @@ function App() {
         maxHeight: '90vh',
         overflowY: 'auto',
       }}>
-        <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '13px' }}>Debug Panel</div>
+        <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '13px' }}>Debug Panel (F9 to hide)</div>
         <div>F1: 3D Mode {is3DMode ? '✅' : '❌'}</div>
         <div>F2: LOD {isLODEnabled ? '✅' : '❌'}</div>
         <div>F3: Kiosk {isKioskModeEnabled ? '✅' : '❌'}</div>
         <div>F4: High-Res {isHighResEnabled ? '✅' : '❌'}</div>
         <div>F6: SciFi Dashboard {showSciFiDashboard ? '✅' : '❌'}</div>
-        <div>F9: Screenshots Only {useScreenshotsOnly ? '✅' : '❌'}</div>
         <div>F10: Card Style 🎨 {cardStyle}</div>
         <div>F11: Museum QR {useMuseumQR ? '✅' : '❌'}</div>
 
@@ -883,6 +869,7 @@ function App() {
           )}
         </div>
       </div>
+      )}
 
       {showSciFiDashboard ? (
         <SciFiDashboard />
