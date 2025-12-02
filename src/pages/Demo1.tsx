@@ -117,15 +117,23 @@ export default function Demo1() {
                     key={event.id} 
                     className="bg-white rounded-lg shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow duration-300 p-6"
                   >
-                    {/* Image Section */}
+                    {/* Image Section with QR Code Overlay */}
                     {displayImage && shouldShowImage && (
-                      <div className="w-full h-auto overflow-hidden rounded-md mb-6">
-                        <img 
-                          src={displayImage} 
+                      <div className="relative w-full h-auto overflow-hidden rounded-md mb-6">
+                        <img
+                          src={displayImage}
                           alt={event.title}
                           className="w-full h-auto object-cover"
                           loading="lazy"
                         />
+                        {/* QR Code Overlay - bottom third, centered */}
+                        <div className="absolute bottom-[10%] left-1/2 -translate-x-1/2">
+                          <QRCodeDisplay
+                            url={event.url}
+                            size={64}
+                            className="bg-white/90 backdrop-blur-sm p-1.5 rounded-lg shadow-lg"
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -135,17 +143,9 @@ export default function Demo1() {
                         {event.title}
                       </h2>
 
-                      <p className="text-gray-600 text-sm leading-relaxed mb-6">
+                      <p className="text-gray-600 text-sm leading-relaxed">
                         {event.summary}
                       </p>
-
-                      <div className="pt-6 border-t border-gray-100 flex justify-start">
-                        <QRCodeDisplay
-                          url={event.url}
-                          size={64}
-                          className="border border-gray-200 p-1 rounded"
-                        />
-                      </div>
                     </div>
                   </article>
                 );
