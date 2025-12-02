@@ -1,17 +1,39 @@
+/**
+ * EventCanvasRenderer - Main renderer for Koralmbahn event canvas
+ *
+ * Responsibilities:
+ * - Viewport culling (only render visible cards)
+ * - High-resolution image loading
+ * - LOD (Level of Detail) transitions
+ * - Axis and overlay rendering
+ * - Delegates card rendering to Card classes
+ */
+
 import type { ViewportTransform, HighResImageConfig } from 'arkturian-canvas-engine';
 import type { LayoutNode } from 'arkturian-canvas-engine/src/layout/LayoutNode';
 
 import type { KoralmEvent } from '../types/koralmbahn';
-import type { KioskMode } from '../hooks/useKioskMode';
 import type { DayAxisRow, DayTimelineBounds, DayTimelineLayouterConfig } from '../layouts/DayTimelineLayouter';
+import type { DayAxisColumn, DayTimelinePortraitBounds } from '../layouts/DayTimelinePortraitLayouter';
 
-interface EventCanvasRendererOptions {
+// Import new card system
+import {
+  CardFactory,
+  type CardFactoryConfig,
+  type AspectRatio,
+  type CardStyleType,
+} from './cards';
+
+export interface EventCanvasRendererOptions {
   padding: number;
   imageLODThreshold: number;
   getImage: (url: string, useHighRes: boolean) => HTMLImageElement | null;
   loadHighResImage: (url: string, config?: HighResImageConfig) => Promise<HTMLImageElement | null>;
   updateLODState: (itemId: string, screenCardWidth: number) => { imageHeightPercent: number; textOpacity: number };
   enableHighResFetch: boolean;
+
+  /** Card factory configuration (optional) */
+  cardFactoryConfig?: Partial<CardFactoryConfig>;
 }
 
 interface RenderFrameParams {
@@ -19,26 +41,58 @@ interface RenderFrameParams {
   viewport: ViewportTransform;
   nodes: LayoutNode<KoralmEvent>[];
   axisRows: DayAxisRow[];
+  axisColumns?: DayAxisColumn[];
   metrics: DayTimelineLayouterConfig | null;
-  bounds: DayTimelineBounds | null;
-  kioskMode: KioskMode;
-  articlesViewedCount: number;
+  bounds: DayTimelineBounds | DayTimelinePortraitBounds | null;
   isLODEnabled: boolean;
-  isKioskModeEnabled: boolean;
-  is3DMode: boolean;
-  isHighResEnabled: boolean;
   failedImages: Set<string>;
-  renderDelta: number;
-  updateDelta: number;
-  layoutMode: 'dayTimeline' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
+  layoutMode: 'dayTimeline' | 'dayTimelinePortrait' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
 }
 
 export class EventCanvasRenderer {
   private readonly options: EventCanvasRendererOptions;
   private highResInFlight = new Set<string>();
+  private cardFactory: CardFactory;
 
   constructor(options: EventCanvasRendererOptions) {
     this.options = options;
+
+    // Initialize card factory with provided config or defaults
+    this.cardFactory = new CardFactory(options.cardFactoryConfig || {
+      aspectRatio: '4:3',
+      defaultStyle: 'summary',
+      baseConfig: {
+        padding: options.padding,
+      },
+    });
+  }
+
+  /**
+   * Update card factory configuration
+   */
+  setCardFactoryConfig(config: Partial<CardFactoryConfig>): void {
+    this.cardFactory = this.cardFactory.withConfig(config);
+  }
+
+  /**
+   * Set card aspect ratio
+   */
+  setAspectRatio(aspectRatio: AspectRatio): void {
+    this.cardFactory = this.cardFactory.withAspectRatio(aspectRatio);
+  }
+
+  /**
+   * Set default card style
+   */
+  setDefaultCardStyle(style: CardStyleType): void {
+    this.cardFactory = this.cardFactory.withDefaultStyle(style);
+  }
+
+  /**
+   * Get current card factory
+   */
+  getCardFactory(): CardFactory {
+    return this.cardFactory;
   }
 
   /**
@@ -59,17 +113,11 @@ export class EventCanvasRenderer {
       viewport,
       nodes,
       axisRows,
+      axisColumns,
       metrics,
       bounds,
-      kioskMode,
-      articlesViewedCount,
       isLODEnabled,
-      isKioskModeEnabled,
-      is3DMode,
-      isHighResEnabled,
       failedImages,
-      renderDelta,
-      updateDelta,
       layoutMode,
     } = params;
 
@@ -81,9 +129,14 @@ export class EventCanvasRenderer {
     ctx.save();
     viewport.applyTransform(ctx);
 
-    // Render axis only in dayTimeline mode
+    // Render axis only in dayTimeline mode (landscape - vertical axis on left)
     if (layoutMode === 'dayTimeline') {
       this.drawAxis(ctx, axisRows, metrics, bounds);
+    }
+
+    // Render axis only in dayTimelinePortrait mode (portrait - horizontal axis at bottom)
+    if (layoutMode === 'dayTimelinePortrait' && axisColumns) {
+      this.drawPortraitAxis(ctx, axisColumns, bounds);
     }
 
     // Render date headers in singleRow mode
@@ -101,20 +154,7 @@ export class EventCanvasRenderer {
     });
 
     ctx.restore();
-
-    this.drawOverlay(ctx, {
-      viewport,
-      eventsCount: nodes.length,
-      kioskMode,
-      articlesViewedCount,
-      useHighRes,
-      renderDelta,
-      updateDelta,
-      isLODEnabled,
-      isKioskModeEnabled,
-      is3DMode,
-      isHighResEnabled,
-    });
+    // Canvas overlay removed - using HTML Debug Panel instead (App.tsx)
   }
 
   private drawAxis(
@@ -151,6 +191,55 @@ export class EventCanvasRenderer {
     });
   }
 
+  /**
+   * Draw horizontal axis at TOP for Portrait layout
+   * Each column represents a day with date label and article count
+   */
+  private drawPortraitAxis(
+    ctx: CanvasRenderingContext2D,
+    axisColumns: DayAxisColumn[],
+    bounds: DayTimelineBounds | DayTimelinePortraitBounds | null,
+  ): void {
+    ctx.save(); // Save context state to prevent text alignment leaking to cards
+
+    const axisHeight = 80; // Fixed axis height
+    const axisY = 0; // Axis at top
+    const totalWidth = bounds?.width ?? window.innerWidth;
+
+    // Draw axis background
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, axisY, totalWidth, axisHeight);
+
+    // Draw bottom border line (separator between axis and cards)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, axisHeight - 8);
+    ctx.lineTo(totalWidth, axisHeight - 8);
+    ctx.stroke();
+
+    // Draw each column
+    axisColumns.forEach((col) => {
+      // Alternating column backgrounds
+      ctx.fillStyle = col.index % 2 === 0 ? '#111b2f' : '#0d1526';
+      ctx.fillRect(col.x, axisY, col.width, axisHeight);
+
+      // Date label (centered horizontally in column)
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'bold 16px "Bricolage Grotesque", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(col.label.toUpperCase(), col.x + col.width / 2, axisY + 25);
+
+      // Article count
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '12px "Bricolage Grotesque", sans-serif';
+      ctx.fillText(`${col.eventCount} Artikel`, col.x + col.width / 2, axisY + 50);
+    });
+
+    ctx.restore(); // Restore context state
+  }
+
   private drawSingleRowDateHeaders(ctx: CanvasRenderingContext2D, nodes: LayoutNode<KoralmEvent>[]): void {
     nodes.forEach((node) => {
       const event = node.data;
@@ -175,21 +264,16 @@ export class EventCanvasRenderer {
       const headerHeight = 30;
       const headerY = y - headerHeight - 5;
 
-      // Save canvas state before modifying it
       ctx.save();
-
-      // Draw header background
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(x, headerY, width, headerHeight);
 
-      // Draw date text
       ctx.fillStyle = '#e2e8f0';
       ctx.font = 'bold 14px "Bricolage Grotesque", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(dateLabel, x + width / 2, headerY + headerHeight / 2);
 
-      // Restore canvas state
       ctx.restore();
     });
   }
@@ -238,6 +322,7 @@ export class EventCanvasRenderer {
         return;
       }
 
+      // Handle high-res image loading
       if (
         this.options.enableHighResFetch &&
         useHighRes &&
@@ -249,11 +334,7 @@ export class EventCanvasRenderer {
         const urlObj = new URL(event.imageUrl);
         const existingFormat = urlObj.searchParams.get('format');
 
-        // Detect Playwright/PDF screenshots using robust API markers
         const isPlaywrightScreenshot = this.isScreenshot(event);
-
-        // Screenshots: use 2500px for excellent text clarity
-        // Regular images: use 1200px
         const targetWidth = isPlaywrightScreenshot ? 2500 : 1200;
 
         const highResConfig: HighResImageConfig = {
@@ -276,448 +357,52 @@ export class EventCanvasRenderer {
           });
       }
 
-      const transitionState = isLODEnabled
+      const lodState = isLODEnabled
         ? this.options.updateLODState(event.id, width * currentScale)
         : { imageHeightPercent: 1, textOpacity: 1 };
 
       const img = event.imageUrl ? this.options.getImage(event.imageUrl, useHighRes) : null;
-      this.drawCard(ctx, { ...event, x, y, width, height }, transitionState, img);
+
+      // Use new card system for rendering
+      this.renderCard(ctx, event, x, y, width, height, img, lodState);
     });
   }
 
-  private drawCard(
-    ctx: CanvasRenderingContext2D,
-    event: KoralmEvent,
-    transitionState: { imageHeightPercent: number; textOpacity: number },
-    img: HTMLImageElement | null,
-  ): void {
-    const { padding } = this.options;
-    const { x = 0, y = 0, width = 0, height = 0 } = event;
-
-    // Handle 'imageOnly' card style: Just show the hero image filling the entire card
-    if (event.cardStyle === 'imageOnly') {
-      this.drawImageOnlyCard(ctx, event, img);
-      return;
-    }
-
-    // Handle 'catalog' card style: Compact news catalog layout
-    if (event.cardStyle === 'catalog') {
-      this.drawCatalogCard(ctx, event, img);
-      return;
-    }
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x - 5, y - 5, width + 10, height + 10);
-    ctx.clip();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.1)';
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 2;
-    ctx.fillRect(x, y, width, height);
-    ctx.restore();
-
-    ctx.strokeStyle = '#e0e0e0';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, width, height);
-
-    // LOD-based dynamic image height:
-    // - Detail mode (zoomed in): 2/3 image (0.667), 1/3 text
-    // - Image-only mode (zoomed out): 100% image, no text
-    // Scale from 0.667 to 1.0 based on LOD transition (0.45→1.0 becomes 0.667→1.0)
-    const detailImageRatio = 0.667; // 2/3 for detail mode
-    const lodProgress = (transitionState.imageHeightPercent - 0.45) / (1.0 - 0.45); // 0 to 1
-    const imageHeightPercent = detailImageRatio + lodProgress * (1.0 - detailImageRatio);
-    const imageHeight = Math.floor(height * Math.min(1.0, Math.max(detailImageRatio, imageHeightPercent)));
-
-    if (img && img.complete) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x, y, width, imageHeight);
-      ctx.clip();
-
-      const imgAspect = img.width / img.height;
-      const targetAspect = width / imageHeight;
-      let drawWidth = width;
-      let drawHeight = imageHeight;
-      let offsetX = 0;
-      let offsetY = 0;
-
-      // Check if this is a screenshot for top-alignment
-      const isScreenshotImage = this.isScreenshot(event);
-
-      if (imgAspect > targetAspect) {
-        // Image wider than container: fit width
-        drawHeight = imageHeight;
-        drawWidth = imageHeight * imgAspect;
-        offsetX = -(drawWidth - width) / 2;
-      } else {
-        // Image taller than container: fit height
-        drawWidth = width;
-        drawHeight = width / imgAspect;
-        // Screenshots: top-aligned, Regular images: center-aligned
-        offsetY = isScreenshotImage ? 0 : -(drawHeight - imageHeight) / 2;
-      }
-
-      ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = '#e0e0e0';
-      ctx.fillRect(x, y, width, imageHeight);
-    }
-
-    // DEBUG: ID overlay on image (top left)
-    ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.fillRect(x + 4, y + 4, 70, 16);
-    ctx.fillStyle = '#fff';
-    ctx.font = '9px monospace';
-    ctx.fillText(`ID: ${event.id}`, x + 8, y + 15);
-    ctx.restore();
-
-    // LOD-based text opacity - smooth fade in/out based on zoom level
-    // Skip text rendering entirely when opacity is near zero for performance
-    if (transitionState.textOpacity < 0.01) {
-      ctx.globalAlpha = 1;
-      return;
-    }
-
-    ctx.globalAlpha = transitionState.textOpacity;
-    const textStartY = y + imageHeight + padding * 0.5;
-    const textStartX = x + padding;
-    const textWidth = width - padding * 2;
-
-    // QR-Code klein (30px) rechts oben im Textbereich
-    const qrSize = 30;
-    const qrMargin = 6;
-
-    if (event.qrCode && event.qrCode.complete) {
-      const qrX = x + width - qrSize - padding;
-      const qrY = textStartY;
-      ctx.save();
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
-      ctx.shadowBlur = 2;
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4);
-      ctx.restore();
-      ctx.drawImage(event.qrCode, qrX, qrY, qrSize, qrSize);
-    }
-
-    // Titel (11px, 2 Zeilen max)
-    const titleWidth = textWidth - qrSize - qrMargin;
-    ctx.fillStyle = '#1a1a1a';
-    ctx.font = 'bold 11px "Bricolage Grotesque", sans-serif';
-    let textOffset = this.drawMultilineText(ctx, event.title, textStartX, textStartY, titleWidth, 11, 2, 13);
-
-    // Subtitle (9px, volle Länge)
-    if (event.subtitle || event.sourceName) {
-      textOffset += 2;
-      ctx.fillStyle = '#666';
-      ctx.font = '9px "Bricolage Grotesque", sans-serif';
-      textOffset = this.drawMultilineText(ctx, event.subtitle || event.sourceName || '', textStartX, textOffset, textWidth, 9, 2, 11);
-    }
-
-    // Summary (9px, 4 Zeilen)
-    textOffset += 2;
-    ctx.fillStyle = '#555';
-    ctx.font = '9px "Bricolage Grotesque", sans-serif';
-    this.drawMultilineText(ctx, event.summary, textStartX, textOffset, textWidth, 9, 4, 11, true);
-
-    ctx.globalAlpha = 1;
-  }
-
   /**
-   * Draw image-only card: Just the hero image filling the entire card area
-   * Used for masonry layout mode where we want a clean image gallery
+   * Render a single card using the card factory
    */
-  private drawImageOnlyCard(
+  private renderCard(
     ctx: CanvasRenderingContext2D,
     event: KoralmEvent,
-    img: HTMLImageElement | null,
-  ): void {
-    const { x = 0, y = 0, width = 0, height = 0 } = event;
-
-    // Draw shadow and border
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x - 5, y - 5, width + 10, height + 10);
-    ctx.clip();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 3;
-    ctx.fillRect(x, y, width, height);
-    ctx.restore();
-
-    ctx.strokeStyle = '#e0e0e0';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, width, height);
-
-    // Draw image filling entire card
-    if (img && img.complete) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x, y, width, height);
-      ctx.clip();
-
-      const imgAspect = img.width / img.height;
-      const targetAspect = width / height;
-      let drawWidth = width;
-      let drawHeight = height;
-      let offsetX = 0;
-      let offsetY = 0;
-
-      // Check if this is a screenshot for top-alignment
-      const isScreenshotImage = this.isScreenshot(event);
-
-      // Cover entire card area
-      if (imgAspect > targetAspect) {
-        // Image wider than container: fit width
-        drawHeight = height;
-        drawWidth = height * imgAspect;
-        offsetX = -(drawWidth - width) / 2;
-      } else {
-        // Image taller than container: fit height
-        drawWidth = width;
-        drawHeight = width / imgAspect;
-        // Screenshots: top-aligned, Regular images: center-aligned
-        offsetY = isScreenshotImage ? 0 : -(drawHeight - height) / 2;
-      }
-
-      ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
-      ctx.restore();
-    } else {
-      // Placeholder while loading
-      ctx.fillStyle = '#f5f5f5';
-      ctx.fillRect(x, y, width, height);
-    }
-
-    // QR Code (bottom-right corner, overlaid on image)
-    const qrSize = 60;
-    const qrPadding = 10;
-    if (event.qrCode && event.qrCode.complete) {
-      const qrX = x + width - qrSize - qrPadding;
-      const qrY = y + height - qrSize - qrPadding;
-      ctx.save();
-      // White background with shadow
-      ctx.fillStyle = '#fff';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-      ctx.shadowBlur = 6;
-      ctx.fillRect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6);
-      ctx.restore();
-      // Border
-      ctx.strokeStyle = '#e0e0e0';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(qrX - 3, qrY - 3, qrSize + 6, qrSize + 6);
-      // QR code image
-      ctx.drawImage(event.qrCode, qrX, qrY, qrSize, qrSize);
-    }
-  }
-
-  /**
-   * Catalog card: Compact newspaper/magazine layout
-   * - Small image (fixed width, preserves aspect ratio)
-   * - Full text content (title, subtitle, summary - no truncation)
-   * - Variable card height based on content
-   * - Newspaper article character
-   */
-  private drawCatalogCard(
-    ctx: CanvasRenderingContext2D,
-    event: KoralmEvent,
-    img: HTMLImageElement | null,
-  ): void {
-    const { padding } = this.options;
-    const { x = 0, y = 0, width = 0, height = 0 } = event;
-
-    if (!width || !height) return;
-
-    // Card background with border
-    ctx.save();
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 2;
-    ctx.fillRect(x, y, width, height);
-    ctx.restore();
-
-    ctx.strokeStyle = '#e5e7eb';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, width, height);
-
-    let currentY = y + padding;
-
-    // Draw image at top (fixed width, variable height based on aspect ratio)
-    if (img && img.complete) {
-      const imgAspect = img.width / img.height;
-      const imageWidth = width;
-      const imageHeight = imageWidth / imgAspect;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x, currentY, imageWidth, imageHeight);
-      ctx.clip();
-      ctx.drawImage(img, x, currentY, imageWidth, imageHeight);
-      ctx.restore();
-
-      currentY += imageHeight + padding;
-    } else {
-      // Placeholder for loading images (use 5:7 aspect ratio)
-      const placeholderHeight = (width * 7) / 5;
-      ctx.fillStyle = '#f3f4f6';
-      ctx.fillRect(x, currentY, width, placeholderHeight);
-      currentY += placeholderHeight + padding;
-    }
-
-    const textX = x + padding;
-    const textWidth = width - padding * 2;
-
-    // Title (bold, larger)
-    ctx.fillStyle = '#111827';
-    ctx.font = 'bold 14px "Bricolage Grotesque", sans-serif';
-    currentY = this.drawMultilineText(ctx, event.title, textX, currentY, textWidth, 14, 999, 17);
-    currentY += 4;
-
-    // Subtitle or source (smaller, gray)
-    if (event.subtitle || event.sourceName) {
-      ctx.fillStyle = '#6b7280';
-      ctx.font = '11px "Bricolage Grotesque", sans-serif';
-      const subtitle = event.subtitle || event.sourceName || '';
-      currentY = this.drawMultilineText(ctx, subtitle, textX, currentY, textWidth, 11, 999, 14);
-      currentY += 6;
-    }
-
-    // Summary (normal weight, no truncation)
-    ctx.fillStyle = '#374151';
-    ctx.font = '11px "Bricolage Grotesque", sans-serif';
-    currentY = this.drawMultilineText(ctx, event.summary, textX, currentY, textWidth, 11, 999, 14, false);
-
-    // QR Code (larger, bottom right)
-    const qrSize = 50;
-    if (event.qrCode && event.qrCode.complete) {
-      const qrX = x + width - qrSize - padding;
-      const qrY = y + height - qrSize - padding;
-      ctx.save();
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4);
-      ctx.strokeStyle = '#e5e7eb';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(qrX - 2, qrY - 2, qrSize + 4, qrSize + 4);
-      ctx.restore();
-      ctx.drawImage(event.qrCode, qrX, qrY, qrSize, qrSize);
-    }
-  }
-
-  private drawOverlay(
-    ctx: CanvasRenderingContext2D,
-    params: {
-      viewport: ViewportTransform;
-      eventsCount: number;
-      kioskMode: KioskMode;
-      articlesViewedCount: number;
-      useHighRes: boolean;
-      renderDelta: number;
-      updateDelta: number;
-      isLODEnabled: boolean;
-      isKioskModeEnabled: boolean;
-      is3DMode: boolean;
-      isHighResEnabled: boolean;
-    },
-  ): void {
-    const {
-      viewport,
-      eventsCount,
-      kioskMode,
-      articlesViewedCount,
-      useHighRes,
-      renderDelta,
-      updateDelta,
-      isLODEnabled,
-      isKioskModeEnabled,
-      is3DMode,
-      isHighResEnabled,
-    } = params;
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-    ctx.fillRect(10, 10, 500, 150);
-    ctx.fillStyle = '#fff';
-    ctx.font = '14px "Bricolage Grotesque", sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('Koralmbahn Events Canvas', 20, 30);
-    const modeText = kioskMode === 'overview' ? 'Overview' : `Article ${articlesViewedCount}/5`;
-    ctx.fillText(
-      `Events: ${eventsCount} | Mode: ${modeText} | Image: ${(useHighRes && isHighResEnabled) ? 'HIGH-RES' : 'THUMBNAIL'}`,
-      20,
-      50,
-    );
-    ctx.fillText(`Zoom: ${(viewport.scale * 100).toFixed(0)}% | Pan: ${Math.round(viewport.offset.x)}, ${Math.round(viewport.offset.y)}`, 20, 70);
-    const actualRenderFPS = renderDelta > 0 ? Math.round(1000 / renderDelta) : 0;
-    const actualUpdateFPS = updateDelta > 0 ? Math.round(1000 / updateDelta) : 0;
-    ctx.fillText(
-      `Render: ${actualRenderFPS}/60 FPS | Update: ${actualUpdateFPS}/25 FPS | Frame: ${renderDelta.toFixed(1)}ms`,
-      20,
-      90,
-    );
-    ctx.fillText('Mouse wheel = zoom | Right-click drag = pan', 20, 110);
-    ctx.fillText(
-      `F1: ${is3DMode ? '3D Mode' : '2D Mode'} | F2: LOD ${isLODEnabled ? 'ON' : 'OFF'} | F3: Kiosk ${isKioskModeEnabled ? 'ON' : 'OFF'} | F4: HighRes ${isHighResEnabled ? 'ON' : 'OFF'}`,
-      20,
-      140,
-    );
-  }
-
-  private drawMultilineText(
-    ctx: CanvasRenderingContext2D,
-    text: string,
     x: number,
-    startY: number,
-    maxWidth: number,
-    fontSize: number,
-    maxLines: number,
-    lineHeight: number,
-    appendEllipsis = false,
-  ): number {
-    // For URLs: Split at / ? & = to allow wrapping
-    const isUrl = text.startsWith('http://') || text.startsWith('https://');
-    let words: string[];
-
-    if (isUrl) {
-      // Split URL at special characters but keep them
-      words = text.split(/([/?&=])/g).filter(part => part.length > 0);
-    } else {
-      words = text.split(' ');
+    y: number,
+    width: number,
+    height: number,
+    image: HTMLImageElement | null,
+    lodState: { imageHeightPercent: number; textOpacity: number },
+  ): void {
+    // Map old cardStyle to new system, or use default
+    let cardStyle: CardStyleType | undefined;
+    if (event.cardStyle === 'imageOnly') {
+      cardStyle = 'overlay';
+    } else if (event.cardStyle === 'catalog') {
+      cardStyle = 'summary';
     }
 
-    const lines: string[] = [];
-    let currentLine = '';
+    // Create card instance
+    const card = this.cardFactory.createCard(event, cardStyle);
 
-    words.forEach((word) => {
-      const separator = (isUrl || !currentLine) ? '' : ' ';
-      const testLine = currentLine ? `${currentLine}${separator}${word}` : word;
-      const metrics = ctx.measureText(testLine);
-      if (metrics.width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
+    // Render the card
+    card.render({
+      ctx,
+      x,
+      y,
+      width,
+      height,
+      image,
+      lodState,
     });
-    if (currentLine) {
-      lines.push(currentLine);
-    }
-
-    const limit = Math.min(maxLines, lines.length);
-    for (let i = 0; i < limit; i++) {
-      const isLastAllowedLine = i === limit - 1;
-      const needsEllipsis = appendEllipsis && isLastAllowedLine && lines.length > maxLines;
-      const content = needsEllipsis ? `${lines[i]}...` : lines[i];
-      ctx.fillText(content, x, startY + i * lineHeight);
-    }
-
-    return startY + limit * lineHeight + (limit > 0 ? 0 : fontSize);
   }
+
+  // Canvas overlay removed - using HTML Debug Panel instead (App.tsx)
 }

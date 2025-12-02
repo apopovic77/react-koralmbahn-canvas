@@ -137,6 +137,7 @@ function mapEventToKoralmEvent(event: Event): KoralmEvent {
     publishedAt: event.published_at || null,
     sourceName: null, // v2 doesn't include source_name in event response
     category,
+    sentiment: event.sentiment ?? null,
   };
 }
 

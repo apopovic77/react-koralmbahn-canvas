@@ -10,8 +10,10 @@ import type { CardStyle, KoralmEvent } from './types/koralmbahn';
 import { useKioskMode } from './hooks/useKioskMode';
 import { useManualMode } from './hooks/useManualMode';
 import { useImageCache } from './hooks/useImageCache';
+import { useEventSync } from './hooks/useEventSync';
 import { QRCodeFactory } from './services/QRCodeFactory';
 import { DayTimelineLayouter, type DayAxisRow, type DayTimelineBounds, type DayTimelineLayouterConfig } from './layouts/DayTimelineLayouter';
+import { DayTimelinePortraitLayouter, type DayAxisColumn, type DayTimelinePortraitBounds } from './layouts/DayTimelinePortraitLayouter';
 import { SingleRowTimelineLayouter, type SingleRowBounds } from './layouts/SingleRowTimelineLayouter';
 import { MasonryLayouter } from './layouts/MasonryLayouter';
 import { EventCanvasRenderer } from './render/EventCanvasRenderer';
@@ -22,8 +24,8 @@ import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
 // Viewport Mode: 3 modes for different border checking behaviors
 type ViewportMode = 'off' | 'rectBounds' | 'snapToContent';
 
-// Layout Mode: 4 modes for different layout algorithms
-type LayoutMode = 'dayTimeline' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
+// Layout Mode: 5 modes for different layout algorithms
+type LayoutMode = 'dayTimeline' | 'dayTimelinePortrait' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
 
 const PADDING = 15;
 
@@ -39,6 +41,8 @@ function getDefaultCardStyleForLayout(layoutMode: LayoutMode): CardStyle {
   switch (layoutMode) {
     case 'dayTimeline':
       return 'standard'; // Standard cards: 50% image, 50% text
+    case 'dayTimelinePortrait':
+      return 'standard'; // Standard cards for portrait monitors
     case 'singleRow':
       return 'standard'; // Standard cards: 50% image, 50% text
     case 'masonryVertical':
@@ -57,6 +61,7 @@ function App() {
   const lastFrameTimeRef = useRef<number>(0);
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
   const dayLayouterRef = useRef(new DayTimelineLayouter());
+  const dayPortraitLayouterRef = useRef(new DayTimelinePortraitLayouter());
   const singleRowLayouterRef = useRef(new SingleRowTimelineLayouter());
 
   // Masonry layouters need to be created inside component to access getImage
@@ -70,20 +75,22 @@ function App() {
   const [events, setEvents] = useState<KoralmEvent[]>([]);
   const [positionedEvents, setPositionedEvents] = useState<KoralmEvent[]>([]);
   const [axisRows, setAxisRows] = useState<DayAxisRow[]>([]);
+  const [axisColumns, setAxisColumns] = useState<DayAxisColumn[]>([]);
   const [layoutBounds, setLayoutBounds] = useState<DayTimelineBounds | null>(null);
   const [layoutMetrics] = useState<DayTimelineLayouterConfig>(dayLayouterRef.current.getMetrics());
   const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [is3DMode, setIs3DMode] = useState(false); // F1: 3D Mode (Default: OFF)
   const [isLODEnabled, setIsLODEnabled] = useState(true);
-  const [isKioskModeEnabled, setIsKioskModeEnabled] = useState(false); // F3: Kiosk Mode (Default: OFF)
+  const [isKioskModeEnabled, setIsKioskModeEnabled] = useState(true); // F3: Kiosk Mode (Default: ON)
   const [isHighResEnabled, setIsHighResEnabled] = useState(true); // F4: HighRes (Default: ON)
   const [showSciFiDashboard, setShowSciFiDashboard] = useState(false); // F6 toggle
   const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimeline'); // F8: Layout Mode (Default: dayTimeline)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimelinePortrait'); // F8: Layout Mode (Default: dayTimelinePortrait)
   const [useScreenshotsOnly, setUseScreenshotsOnly] = useState(false); // F9: Screenshots Only (Default: OFF)
-  const [cardStyle, setCardStyle] = useState<CardStyle>(getDefaultCardStyleForLayout('dayTimeline')); // F10: Card Style (Auto-set based on layout mode)
+  const [cardStyle, setCardStyle] = useState<CardStyle>('imageOnly'); // F10: Card Style (Default: imageOnly)
   const [useMuseumQR, setUseMuseumQR] = useState(true); // F11: Museum QR Codes (Default: ON - show museum page instead of original article)
-  const [qrRenderTrigger, setQrRenderTrigger] = useState(0); // Trigger re-render when QR codes are ready
+  const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all'); // Sentiment filter
+  const [heroImageOnly, setHeroImageOnly] = useState(false); // Only show events with hero images (not screenshots)
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Click detection refs (to distinguish clicks from drags)
@@ -97,23 +104,59 @@ function App() {
   const { getImage, loadHighResImage, preloadImages } = useImageCache();
   const { updateLODState } = useLODTransitions();
 
-  // Transform events based on F9 "Screenshots Only" toggle
-  const displayEvents = useMemo(() => {
-    // qrRenderTrigger is in dependencies to force re-render when QR codes are ready
-    if (!useScreenshotsOnly) return events;
-
-    return events.map(event => {
-      // Only transform if screenshot exists
-      if (event.screenshotUrl) {
-        return {
-          ...event,
-          imageUrl: event.screenshotUrl,
-          sourceName: 'Article Screenshot', // Mark as screenshot for top-aligned rendering
-        };
+  // Real-time sync - polls for changes every 60 seconds
+  const {
+    isSyncing,
+    lastSyncTime,
+    lastSyncStats,
+  } = useEventSync({
+    initialEvents: events,
+    pollInterval: 60000, // 60 seconds
+    enabled: events.length > 0, // Only enable after initial load
+    onEventsChange: (newEvents) => {
+      // Update the main events state when sync detects changes
+      if (newEvents.length !== events.length) {
+        setEvents(newEvents);
       }
-      return event;
-    });
-  }, [events, useScreenshotsOnly, qrRenderTrigger]);
+    },
+  });
+
+  // Transform and filter events based on toggles
+  const displayEvents = useMemo(() => {
+    let filtered = events;
+
+    // Filter: Hero Image Only (exclude screenshot-only events)
+    if (heroImageOnly) {
+      filtered = filtered.filter(event => !event.isImageScreenshot && event.imageUrl);
+    }
+
+    // Filter: Sentiment
+    if (sentimentFilter !== 'all') {
+      filtered = filtered.filter(event => {
+        const sentiment = event.sentiment ?? 0;
+        if (sentimentFilter === 'positive') return sentiment > 0.2;
+        if (sentimentFilter === 'negative') return sentiment < -0.2;
+        if (sentimentFilter === 'neutral') return sentiment >= -0.2 && sentiment <= 0.2;
+        return true;
+      });
+    }
+
+    // Transform: Screenshots Only mode
+    if (useScreenshotsOnly) {
+      filtered = filtered.map(event => {
+        if (event.screenshotUrl) {
+          return {
+            ...event,
+            imageUrl: event.screenshotUrl,
+            sourceName: 'Article Screenshot',
+          };
+        }
+        return event;
+      });
+    }
+
+    return filtered;
+  }, [events, useScreenshotsOnly, heroImageOnly, sentimentFilter]);
 
   useEffect(() => {
     rendererRef.current = new EventCanvasRenderer({
@@ -350,6 +393,7 @@ function App() {
     // Determine base URL for museum article pages
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
+    const qrCodeMap = new Map<string, HTMLImageElement>();
     let completedCount = 0;
     const totalCount = events.length;
 
@@ -366,20 +410,23 @@ function App() {
           margin: 1,
         });
 
-        event.qrCode = qrImg;
+        qrCodeMap.set(event.id, qrImg);
         completedCount++;
 
-        // Force re-render when all QR codes are ready
+        // Update events state with QR codes when all are ready
         if (completedCount === totalCount) {
           console.log(`[QR Codes] All ${totalCount} QR codes generated (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
-          setQrRenderTrigger(prev => prev + 1); // Force re-render
+          setEvents(prevEvents => prevEvents.map(e => ({
+            ...e,
+            qrCode: qrCodeMap.get(e.id) ?? e.qrCode,
+          })));
         }
       } catch (error) {
         console.error(`[App] QR code generation failed for event ${event.id}:`, error);
         completedCount++;
       }
     });
-  }, [events, useMuseumQR]);
+  }, [events.length, useMuseumQR]); // Only trigger on events.length change, not events reference
 
   useEffect(() => {
     // Set overflow hidden for body/html when App is mounted
@@ -461,6 +508,8 @@ function App() {
 
     if (layoutMode === 'dayTimeline') {
       layoutEngine.setLayouter(dayLayouterRef.current);
+    } else if (layoutMode === 'dayTimelinePortrait') {
+      layoutEngine.setLayouter(dayPortraitLayouterRef.current);
     } else if (layoutMode === 'singleRow') {
       layoutEngine.setLayouter(singleRowLayouterRef.current);
     } else if (layoutMode === 'masonryVertical') {
@@ -489,20 +538,29 @@ function App() {
     layoutEngine.layout(viewportSize);
 
     // Get bounds based on current layout mode
-    let bounds: DayTimelineBounds | SingleRowBounds;
+    let bounds: DayTimelineBounds | DayTimelinePortraitBounds | SingleRowBounds;
     if (layoutMode === 'dayTimeline') {
       const layouter = dayLayouterRef.current;
       setAxisRows(layouter.getAxisRows());
+      setAxisColumns([]);
+      bounds = layouter.getContentBounds();
+    } else if (layoutMode === 'dayTimelinePortrait') {
+      const layouter = dayPortraitLayouterRef.current;
+      setAxisRows([]);
+      setAxisColumns(layouter.getAxisColumns());
       bounds = layouter.getContentBounds();
     } else if (layoutMode === 'singleRow') {
-      setAxisRows([]); // No axis rows in single row mode
+      setAxisRows([]);
+      setAxisColumns([]);
       bounds = singleRowLayouterRef.current.getContentBounds();
     } else if (layoutMode === 'masonryVertical') {
-      setAxisRows([]); // No axis rows in masonry mode
+      setAxisRows([]);
+      setAxisColumns([]);
       bounds = masonryVerticalLayouterRef.current?.getContentBounds() || { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
     } else {
       // masonryHorizontal
-      setAxisRows([]); // No axis rows in masonry mode
+      setAxisRows([]);
+      setAxisColumns([]);
       bounds = masonryHorizontalLayouterRef.current?.getContentBounds() || { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
     }
 
@@ -570,6 +628,8 @@ function App() {
         setLayoutMode((prev) => {
           let nextMode: LayoutMode;
           if (prev === 'dayTimeline') {
+            nextMode = 'dayTimelinePortrait';
+          } else if (prev === 'dayTimelinePortrait') {
             nextMode = 'singleRow';
           } else if (prev === 'singleRow') {
             nextMode = 'masonryVertical';
@@ -676,17 +736,11 @@ function App() {
         viewport,
         nodes,
         axisRows,
+        axisColumns,
         metrics: layoutMetrics,
         bounds: layoutBounds,
-        kioskMode,
-        articlesViewedCount,
         isLODEnabled,
-        isKioskModeEnabled,
-        is3DMode,
         failedImages: failedImagesRef.current,
-        renderDelta,
-        updateDelta,
-        isHighResEnabled,
         layoutMode,
       });
 
@@ -704,7 +758,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [displayEvents, axisRows, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents]);
+  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents]);
 
   return (
     <div className="app-container">
@@ -713,7 +767,7 @@ function App() {
         position: 'fixed',
         top: '10px',
         left: '10px',
-        background: 'rgba(0, 0, 0, 0.8)',
+        background: 'rgba(0, 0, 0, 0.85)',
         color: '#fff',
         padding: '12px 16px',
         borderRadius: '8px',
@@ -721,7 +775,9 @@ function App() {
         fontSize: '12px',
         lineHeight: '1.6',
         zIndex: 9999,
-        pointerEvents: 'none',
+        pointerEvents: 'auto',
+        maxHeight: '90vh',
+        overflowY: 'auto',
       }}>
         <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '13px' }}>Debug Panel</div>
         <div>F1: 3D Mode {is3DMode ? '✅' : '❌'}</div>
@@ -732,6 +788,61 @@ function App() {
         <div>F9: Screenshots Only {useScreenshotsOnly ? '✅' : '❌'}</div>
         <div>F10: Card Style 🎨 {cardStyle}</div>
         <div>F11: Museum QR {useMuseumQR ? '✅' : '❌'}</div>
+
+        {/* Filters Section */}
+        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>Filters</div>
+
+          {/* Hero Image Only */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <input
+              type="checkbox"
+              id="heroImageOnly"
+              checked={heroImageOnly}
+              onChange={(e) => setHeroImageOnly(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            <label htmlFor="heroImageOnly" style={{ cursor: 'pointer', fontSize: '11px' }}>
+              Nur Hero-Bilder (keine Screenshots)
+            </label>
+          </div>
+
+          {/* Sentiment Filter */}
+          <div style={{ fontSize: '11px', marginTop: '6px' }}>
+            <span style={{ opacity: 0.8 }}>Sentiment:</span>
+            <div style={{ display: 'flex', gap: '4px', marginTop: '4px', flexWrap: 'wrap' }}>
+              {(['all', 'positive', 'neutral', 'negative'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setSentimentFilter(filter)}
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: '10px',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    background: sentimentFilter === filter
+                      ? filter === 'positive' ? '#22c55e'
+                        : filter === 'negative' ? '#ef4444'
+                        : filter === 'neutral' ? '#6b7280'
+                        : '#3b82f6'
+                      : 'rgba(255,255,255,0.1)',
+                    color: sentimentFilter === filter ? '#fff' : 'rgba(255,255,255,0.7)',
+                    fontWeight: sentimentFilter === filter ? 'bold' : 'normal',
+                  }}
+                >
+                  {filter === 'all' ? 'Alle' : filter === 'positive' ? '😊 Positiv' : filter === 'negative' ? '😠 Negativ' : '😐 Neutral'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Event Count */}
+          <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '8px' }}>
+            Anzeige: {displayEvents.length} / {events.length} Events
+          </div>
+        </div>
+
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
           <div style={{ fontWeight: 'bold' }}>Viewport (v1.0.18)</div>
           <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
@@ -747,12 +858,29 @@ function App() {
           <div style={{ fontWeight: 'bold' }}>Layout</div>
           <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
             F8: {
-              layoutMode === 'dayTimeline' ? '📅 Day Timeline' :
+              layoutMode === 'dayTimeline' ? '📅 Day Timeline (Landscape)' :
+              layoutMode === 'dayTimelinePortrait' ? '📅 Day Timeline (Portrait)' :
               layoutMode === 'singleRow' ? '➡️ Single Row' :
               layoutMode === 'masonryVertical' ? '🧱 Masonry ⬇️' :
               '🧱 Masonry ➡️'
             }
           </div>
+        </div>
+        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
+          <div style={{ fontWeight: 'bold' }}>Real-Time Sync</div>
+          <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '4px' }}>
+            {isSyncing ? '🔄 Syncing...' : '✅ Idle'}
+          </div>
+          {lastSyncTime && (
+            <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '2px' }}>
+              Last: {lastSyncTime.toLocaleTimeString('de-AT')}
+            </div>
+          )}
+          {lastSyncStats && (lastSyncStats.created > 0 || lastSyncStats.updated > 0 || lastSyncStats.deleted > 0) && (
+            <div style={{ fontSize: '10px', opacity: 0.7, marginTop: '2px', color: '#4ade80' }}>
+              +{lastSyncStats.created} ~{lastSyncStats.updated} -{lastSyncStats.deleted}
+            </div>
+          )}
         </div>
       </div>
 
@@ -803,7 +931,7 @@ function App() {
                 display: 'block',
                 width: '100vw',
                 height: '100vh',
-                background: '#f5f5f5',
+                background: 'transparent',
                 // Canvas sits at 0,0
                 position: 'absolute',
                 top: 0,

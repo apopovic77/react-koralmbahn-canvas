@@ -23,6 +23,7 @@ export interface KoralmEvent {
   publishedAt: string | null;
   sourceName: string | null;
   category: string | null;
+  sentiment?: number | null; // AI sentiment score: -1 (negative) to +1 (positive), 0 = neutral
   x?: number;
   y?: number;
   width?: number;
