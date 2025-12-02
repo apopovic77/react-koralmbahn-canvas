@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ViewportTransform } from 'arkturian-canvas-engine';
 import type { KoralmEvent } from '../types/koralmbahn';
 
@@ -21,6 +21,7 @@ interface UseKioskModeReturn {
   kioskMode: KioskMode;
   selectedArticleIndex: number;
   articlesViewedCount: number;
+  priorityQueueLength: number;
   zoomToOverview: () => void;
   zoomToArticle: (index: number) => void;
   stopKiosk: () => void;
@@ -47,6 +48,34 @@ export function useKioskMode({
   const [selectedArticleIndex, setSelectedArticleIndex] = useState<number>(0);
   const [articlesViewedCount, setArticlesViewedCount] = useState<number>(0);
   const kioskTimerRef = useRef<number | null>(null);
+
+  // Priority queue for new events
+  const [priorityQueue, setPriorityQueue] = useState<string[]>([]);
+  const knownEventIdsRef = useRef<Set<string>>(new Set());
+
+  // Detect new events and add to priority queue
+  useEffect(() => {
+    if (events.length === 0) return;
+
+    const currentIds = new Set(events.map(e => e.id));
+    const newEventIds: string[] = [];
+
+    // Find events that weren't in the previous set
+    currentIds.forEach(id => {
+      if (!knownEventIdsRef.current.has(id)) {
+        newEventIds.push(id);
+      }
+    });
+
+    // Update known IDs
+    knownEventIdsRef.current = currentIds;
+
+    // Add new events to priority queue (if not first load)
+    if (newEventIds.length > 0 && knownEventIdsRef.current.size > newEventIds.length) {
+      console.log(`[Kiosk] New events detected: ${newEventIds.length} - adding to priority queue`);
+      setPriorityQueue(prev => [...newEventIds, ...prev]);
+    }
+  }, [events]);
 
   const zoomToOverview = () => {
     if (!viewport || events.length === 0) return;
@@ -114,34 +143,59 @@ export function useKioskMode({
     }
   };
 
+  // Get next article index - prioritize new events, then random
+  const getNextArticleIndex = useCallback((): number => {
+    // Check if we have priority events (newly arrived)
+    if (priorityQueue.length > 0) {
+      const priorityEventId = priorityQueue[0];
+      const priorityIndex = events.findIndex(e => e.id === priorityEventId);
+
+      if (priorityIndex !== -1) {
+        // Remove from queue
+        setPriorityQueue(prev => prev.slice(1));
+        console.log(`[Kiosk] Showing priority event: ${events[priorityIndex].title}`);
+        return priorityIndex;
+      } else {
+        // Event no longer exists, remove from queue and try again
+        setPriorityQueue(prev => prev.slice(1));
+      }
+    }
+
+    // Fall back to random
+    return Math.floor(Math.random() * events.length);
+  }, [events, priorityQueue]);
+
   const scheduleNextTransition = () => {
     if (kioskTimerRef.current) {
       clearTimeout(kioskTimerRef.current);
     }
 
     if (kioskMode === 'overview') {
-      // Switch to first random article after overview duration
+      // Switch to first article after overview duration
       kioskTimerRef.current = window.setTimeout(() => {
-        const randomIndex = Math.floor(Math.random() * events.length);
-        setSelectedArticleIndex(randomIndex);
+        const nextIndex = getNextArticleIndex();
+        setSelectedArticleIndex(nextIndex);
         setArticlesViewedCount(1); // Reset counter and start at 1
         setKioskMode('article');
-        zoomToArticle(randomIndex);
+        zoomToArticle(nextIndex);
       }, overviewDuration);
     } else {
       // In article mode
       kioskTimerRef.current = window.setTimeout(() => {
-        if (articlesViewedCount >= articlesBeforeOverview) {
-          // Viewed enough articles, return to overview
+        // Check if we have priority events - if so, skip to them even if we haven't viewed enough articles
+        const hasPriorityEvents = priorityQueue.length > 0;
+
+        if (!hasPriorityEvents && articlesViewedCount >= articlesBeforeOverview) {
+          // Viewed enough articles and no priority events, return to overview
           setArticlesViewedCount(0);
           setKioskMode('overview');
           zoomToOverview();
         } else {
-          // Switch to next random article
-          const randomIndex = Math.floor(Math.random() * events.length);
-          setSelectedArticleIndex(randomIndex);
+          // Switch to next article (priority or random)
+          const nextIndex = getNextArticleIndex();
+          setSelectedArticleIndex(nextIndex);
           setArticlesViewedCount(prev => prev + 1);
-          zoomToArticle(randomIndex);
+          zoomToArticle(nextIndex);
         }
       }, articleDuration);
     }
@@ -169,12 +223,13 @@ export function useKioskMode({
     return () => {
       stopKiosk();
     };
-  }, [kioskMode, selectedArticleIndex, articlesViewedCount, events, isManualMode, isKioskModeEnabled]);
+  }, [kioskMode, selectedArticleIndex, articlesViewedCount, events, isManualMode, isKioskModeEnabled, priorityQueue]);
 
   return {
     kioskMode,
     selectedArticleIndex,
     articlesViewedCount,
+    priorityQueueLength: priorityQueue.length,
     zoomToOverview,
     zoomToArticle,
     stopKiosk,
