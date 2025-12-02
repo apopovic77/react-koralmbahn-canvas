@@ -43,6 +43,47 @@ function formatDate(dateString: string | null): string {
   }).format(date);
 }
 
+/**
+ * Simple Markdown to HTML renderer
+ * Handles: headers, bold, italic, links, paragraphs, lists
+ */
+function renderMarkdown(markdown: string): string {
+  let html = markdown
+    // Escape HTML
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    // Headers
+    .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+    // Bold & Italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/___(.+?)___/g, '<strong><em>$1</em></strong>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/_(.+?)_/g, '<em>$1</em>')
+    // Links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    // Unordered lists
+    .replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>')
+    // Line breaks to paragraphs
+    .replace(/\n\n+/g, '</p><p>')
+    .replace(/\n/g, '<br />');
+
+  // Wrap lists
+  html = html.replace(/(<li>.*?<\/li>)+/g, '<ul>$&</ul>');
+
+  // Wrap in paragraph
+  html = '<p>' + html + '</p>';
+
+  // Clean up empty paragraphs
+  html = html.replace(/<p>\s*<\/p>/g, '');
+
+  return html;
+}
+
 export default function ArticlePageV2() {
   const { id } = useParams<{ id: string }>();
   const [article, setArticle] = useState<KoralmEvent | null>(null);
@@ -103,8 +144,12 @@ export default function ArticlePageV2() {
 
         {/* Content over image */}
         <div className="hero-content">
-          {/* ID Badge */}
-          <span className="article-id">ID: {article.id}</span>
+          {/* Source & Date Badge */}
+          <span className="article-source-badge">
+            {article.sourceName && <span className="source-name">{article.sourceName}</span>}
+            {article.sourceName && article.publishedAt && <span className="badge-separator">•</span>}
+            {article.publishedAt && <span className="publish-date">{formatDate(article.publishedAt)}</span>}
+          </span>
 
           {/* Title */}
           <h1 className="hero-title">{article.title}</h1>
@@ -157,10 +202,22 @@ export default function ArticlePageV2() {
           )}
         </div>
 
-        {/* Summary / Full Text */}
+        {/* Full Article Text */}
         <div className="article-body">
-          <h2>Zusammenfassung</h2>
-          <p className="summary-text">{article.summary}</p>
+          {article.markdownBody ? (
+            <>
+              <h2>Artikel</h2>
+              <div
+                className="markdown-content"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(article.markdownBody) }}
+              />
+            </>
+          ) : (
+            <>
+              <h2>Zusammenfassung</h2>
+              <p className="summary-text">{article.summary}</p>
+            </>
+          )}
 
           {/* Screenshot notice if applicable */}
           {article.isImageScreenshot && (

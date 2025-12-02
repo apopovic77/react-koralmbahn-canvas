@@ -125,17 +125,21 @@ function mapEventToKoralmEvent(event: Event): KoralmEvent {
     }
   }
 
+  // Some fields may not be in the SDK type but are returned by the API
+  const eventAny = event as Event & { source_name?: string | null };
+
   return {
     id: event.id ? String(event.id) : event.event_uuid,
     title,
     subtitle: event.subtitle?.trim() || null,
     summary: summary.length > 200 ? summary.substring(0, 197) + '...' : summary,
+    markdownBody: event.markdown_body || null,
     url: event.url || '#',
     imageUrl,
     screenshotUrl,
     isImageScreenshot,
     publishedAt: event.published_at || null,
-    sourceName: null, // v2 doesn't include source_name in event response
+    sourceName: eventAny.source_name || null,
     category,
     sentiment: event.sentiment ?? null,
   };

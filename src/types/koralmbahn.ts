@@ -16,6 +16,7 @@ export interface KoralmEvent {
   title: string;
   subtitle?: string | null;
   summary: string;
+  markdownBody?: string | null; // Full article text in Markdown
   url: string;
   imageUrl: string | null;
   screenshotUrl?: string | null; // Playwright/PDF screenshot URL
