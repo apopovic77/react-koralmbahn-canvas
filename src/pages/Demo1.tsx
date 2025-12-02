@@ -20,6 +20,7 @@ export default function Demo1() {
   const [events, setEvents] = useState<KoralmEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [hideScreenshots, setHideScreenshots] = useState(false);
+  const [grayscale, setGrayscale] = useState(false);
   const windowWidth = useWindowWidth();
 
   useEffect(() => {
@@ -70,25 +71,49 @@ export default function Demo1() {
       <div className="flex flex-col items-center mb-12">
         <h1 className="text-4xl font-bold text-center text-black mb-6">Mehr zur Koralmbahn</h1>
 
-        {/* Toggle Switch */}
-        <div className="flex items-center space-x-3 bg-gray-100 p-2 rounded-full">
-          <span className={`text-sm font-medium ${!hideScreenshots ? 'text-gray-900' : 'text-gray-500'}`}>Alle Bilder</span>
-          <button
-            onClick={() => setHideScreenshots(!hideScreenshots)}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-              hideScreenshots ? 'bg-[#CC0000]' : 'bg-gray-300'
-            }`}
-            role="switch"
-            aria-checked={hideScreenshots}
-          >
-            <span
-              aria-hidden="true"
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                hideScreenshots ? 'translate-x-5' : 'translate-x-0'
+        {/* Controls */}
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          {/* Screenshot Toggle */}
+          <div className="flex items-center space-x-3 bg-gray-100 p-2 rounded-full">
+            <span className={`text-sm font-medium ${!hideScreenshots ? 'text-gray-900' : 'text-gray-500'}`}>Alle Bilder</span>
+            <button
+              onClick={() => setHideScreenshots(!hideScreenshots)}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                hideScreenshots ? 'bg-[#CC0000]' : 'bg-gray-300'
               }`}
-            />
-          </button>
-          <span className={`text-sm font-medium ${hideScreenshots ? 'text-[#CC0000]' : 'text-gray-500'}`}>Keine Screenshots</span>
+              role="switch"
+              aria-checked={hideScreenshots}
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  hideScreenshots ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+            <span className={`text-sm font-medium ${hideScreenshots ? 'text-[#CC0000]' : 'text-gray-500'}`}>Keine Screenshots</span>
+          </div>
+
+          {/* Grayscale Toggle */}
+          <div className="flex items-center space-x-3 bg-gray-100 p-2 rounded-full">
+            <span className={`text-sm font-medium ${!grayscale ? 'text-gray-900' : 'text-gray-500'}`}>Farbe</span>
+            <button
+              onClick={() => setGrayscale(!grayscale)}
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                grayscale ? 'bg-gray-700' : 'bg-gray-300'
+              }`}
+              role="switch"
+              aria-checked={grayscale}
+            >
+              <span
+                aria-hidden="true"
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                  grayscale ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+            <span className={`text-sm font-medium ${grayscale ? 'text-gray-700' : 'text-gray-500'}`}>Schwarz-Weiß</span>
+          </div>
         </div>
       </div>
 
@@ -123,7 +148,7 @@ export default function Demo1() {
                         <img
                           src={displayImage}
                           alt={event.title}
-                          className="w-full h-auto object-cover"
+                          className={`w-full h-auto object-cover transition-[filter] duration-300 ${grayscale ? 'grayscale' : ''}`}
                           loading="lazy"
                         />
                         {/* QR Code Overlay - bottom third, centered */}
