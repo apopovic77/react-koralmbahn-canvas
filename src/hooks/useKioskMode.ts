@@ -28,7 +28,7 @@ interface UseKioskModeReturn {
 
 const DEFAULT_OVERVIEW_DURATION = 10000; // 10 seconds
 const DEFAULT_ARTICLE_DURATION = 8000; // 8 seconds
-const DEFAULT_TRANSITION_SPEED = 0.0001; // ~2.5 seconds
+const DEFAULT_TRANSITION_SPEED = 0.00007; // ~3.5 seconds (slower = smaller value)
 const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 5;
 
 export function useKioskMode({
