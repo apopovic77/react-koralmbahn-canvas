@@ -1,17 +1,11 @@
+import { Configuration, EventsApi, type Event } from 'eventcrawler-api-sdk';
 import type { KoralmEvent } from '../types/koralmbahn';
 
+// Storage API configuration
 const DEFAULT_STORAGE_BASE_URL = 'https://api-storage.arkturian.com';
 const STORAGE_BASE_URL =
   (import.meta.env.VITE_KORALMBAHN_STORAGE_URL as string | undefined)?.replace(/\/+$/, '') ??
   DEFAULT_STORAGE_BASE_URL;
-
-const STORAGE_HOSTNAME = (() => {
-  try {
-    return new URL(`${STORAGE_BASE_URL}/`).hostname;
-  } catch {
-    return undefined;
-  }
-})();
 
 // Image source mode: storage, proxy, or local
 type ImageSourceMode = 'storage' | 'proxy' | 'local';
@@ -19,8 +13,10 @@ const IMAGE_SOURCE: ImageSourceMode =
   (import.meta.env.VITE_IMAGE_SOURCE as ImageSourceMode) || 'storage';
 
 const IMAGE_PROXY_URL = 'https://share.arkturian.com/imageproxy.php';
-const LOCAL_FS_URL = 'https://share.arkturian.com/events.php';
 
+/**
+ * Build a Storage API media URL with optional transformation params
+ */
 function buildStorageMediaUrl(
   id: string | number,
   params?: Record<string, string | number | undefined>
@@ -35,31 +31,42 @@ function buildStorageMediaUrl(
   return url.toString();
 }
 
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]+>/g, ' ');
+/**
+ * Wrap URL with image proxy if proxy mode is enabled
+ */
+function wrapWithProxy(url: string): string {
+  if (IMAGE_SOURCE === 'proxy') {
+    const proxyUrl = new URL(IMAGE_PROXY_URL);
+    proxyUrl.searchParams.set('url', url);
+    return proxyUrl.toString();
+  }
+  return url;
 }
 
+/**
+ * Normalize text by stripping HTML and extra whitespace
+ */
 function normalizeSnippet(value?: string | null): string {
   if (!value) return '';
-  return stripHtml(value)
+  return value
+    .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-
+/**
+ * Resolve API base URL from environment
+ */
 function resolveApiBaseUrl(): string {
-  // Check for explicit API URL
   const explicit = import.meta.env.VITE_KORALMBAHN_API_URL;
   if (explicit && explicit.length > 0) {
     return explicit.replace(/\/?$/, '');
   }
 
-  // Development: local API
   if (import.meta.env.DEV) {
-    return 'http://localhost:8080';
+    return 'http://localhost:8081';
   }
 
-  // Production: same origin
   if (typeof window !== 'undefined' && window.location) {
     return window.location.origin;
   }
@@ -67,152 +74,59 @@ function resolveApiBaseUrl(): string {
   return '';
 }
 
-interface EventApiResponse {
-  event_id?: number | null;
-  event_uuid?: string | null;
-  title_de?: string | null;
-  title_en?: string | null;
-  subtitle?: string | null;
-  summary_de?: string | null;
-  summary_en?: string | null;
-  url?: string | null;
-  published_at?: string | null;
-  tags?: string[] | null;
-  media?: Array<{
-    id?: string | null;
-    type?: string | null;
-    url?: string | null;
-    thumbnail_url?: string | null;
-    source_url?: string | null;
-    source_name?: string | null;
-    media_role?: string | null;
-    storage_object?: {
-      id?: number | string | null;
-      mime_type?: string | null;
-    } | null;
-  }> | null;
+/**
+ * Create configured EventsApi instance
+ */
+function createEventsApi(): EventsApi {
+  const config = new Configuration({
+    basePath: resolveApiBaseUrl()
+  });
+  return new EventsApi(config);
 }
 
-function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
-  // Prefer German content
+/**
+ * Map SDK Event to KoralmEvent for UI consumption
+ */
+function mapEventToKoralmEvent(event: Event): KoralmEvent {
   const title = event.title_de?.trim() || event.title_en?.trim() || 'Unbetitelter Beitrag';
   const summary = normalizeSnippet(event.summary_de || event.summary_en);
 
-  // Helper to check if a media item is a screenshot
-  const isScreenshotMedia = (media: NonNullable<EventApiResponse['media']>[0]): boolean => {
-    const sourceName = media.source_name?.toLowerCase() || '';
-    return !!(
-      media.media_role === 'screenshot' ||
-      sourceName.includes('screenshot') ||
-      media.url?.includes('#screenshot') ||
-      media.url?.toLowerCase().includes('playwright') ||
-      media.url?.toLowerCase().includes('screenshot')
-    );
-  };
-
-  // Helper to build media URL
-  const buildMediaUrl = (
-    media: NonNullable<EventApiResponse['media']>[0],
-    eventId: number | null
-  ): string | null => {
-    // Local filesystem mode - use events.php
-    if (IMAGE_SOURCE === 'local' && eventId) {
-      const localUrl = new URL(LOCAL_FS_URL);
-      localUrl.searchParams.set('event_id', String(eventId));
-      // Add transformation params if needed (optional)
-      // localUrl.searchParams.set('width', '1200');
-      // localUrl.searchParams.set('format', 'webp');
-      return localUrl.toString();
-    }
-
-    // Storage or proxy mode - build Storage API URL
-    const storageHost = STORAGE_HOSTNAME;
-    const isStorageUrl = (() => {
-      if (!media?.url) return false;
-      try {
-        const host = new URL(media.url).hostname;
-        return storageHost ? host === storageHost : media.url.includes('/storage/media/');
-      } catch {
-        return media.url.includes('/storage/media/');
-      }
-    })();
-
-    let finalUrl: string | null = null;
-
-    if (isStorageUrl && media?.url) {
-      finalUrl = media.url;
-    } else if (media?.id || media?.storage_object?.id) {
-      const storageId = media.id || media.storage_object?.id;
-      const mimeType = media.storage_object?.mime_type;
-      const isSvg = mimeType?.toLowerCase().includes('svg');
-      const params: Record<string, string | number> = {};
-
-      if (isSvg) {
-        params.format = 'png';
-        params.aspect_ratio = '5:7';
-      }
-
-      finalUrl = buildStorageMediaUrl(storageId!, params);
-    }
-
-    // Wrap with imageproxy if proxy mode enabled
-    if (finalUrl && IMAGE_SOURCE === 'proxy') {
-      const proxyUrl = new URL(IMAGE_PROXY_URL);
-      proxyUrl.searchParams.set('url', finalUrl);
-      return proxyUrl.toString();
-    }
-
-    return finalUrl;
-  };
-
-  // Extract both hero image and screenshot URLs
+  // Build image URLs from storage IDs
   let imageUrl: string | null = null;
   let screenshotUrl: string | null = null;
+  let isImageScreenshot = false;
 
-  const eventId = event.event_id ?? null;
-
-  if (event.media && event.media.length > 0) {
-    // Find first non-screenshot (hero image)
-    const heroMedia = event.media.find(m => !isScreenshotMedia(m));
-    // Find first screenshot
-    const screenshotMedia = event.media.find(m => isScreenshotMedia(m));
-
-    imageUrl = heroMedia ? buildMediaUrl(heroMedia, eventId) : buildMediaUrl(event.media[0], eventId);
-    screenshotUrl = screenshotMedia ? buildMediaUrl(screenshotMedia, eventId) : null;
+  if (event.hero_image_storage_id) {
+    imageUrl = wrapWithProxy(buildStorageMediaUrl(event.hero_image_storage_id));
   }
 
-  // Determine if the final imageUrl is a screenshot
-  // It is a screenshot if:
-  // 1. We have media
-  // 2. We didn't find a heroMedia (non-screenshot)
-  // 3. So we fell back to event.media[0] which MUST be a screenshot (otherwise it would be heroMedia)
-  // OR if the explicit logic says so.
-  let isImageScreenshot = false;
-  if (event.media && event.media.length > 0) {
-    const heroMedia = event.media.find(m => !isScreenshotMedia(m));
-    if (!heroMedia) {
-        isImageScreenshot = true;
+  if (event.screenshot_storage_id) {
+    screenshotUrl = wrapWithProxy(buildStorageMediaUrl(event.screenshot_storage_id));
+
+    // If no hero image, use screenshot as main image
+    if (!imageUrl) {
+      imageUrl = screenshotUrl;
+      isImageScreenshot = true;
+      screenshotUrl = null;
     }
   }
 
-  // DEBUG: Log screenshot detection
-  const hasScreenshot = !!screenshotUrl;
-  if (hasScreenshot || event.media?.some(m => isScreenshotMedia(m))) {
-    console.log('[API Debug] Event with screenshot:', {
-      title: title.substring(0, 50),
-      imageUrl,
-      screenshotUrl,
-      sourceName: event.media?.[0]?.source_name,
-      allMedia: event.media?.map(m => ({
-        source_name: m.source_name,
-        url: m.url?.substring(0, 60),
-        isScreenshot: isScreenshotMedia(m)
-      }))
-    });
+  // Parse tags (stored as JSON string in v2 API)
+  let category: string | null = null;
+  if (event.tags) {
+    try {
+      const tagsArray = JSON.parse(event.tags);
+      if (Array.isArray(tagsArray) && tagsArray.length > 0) {
+        category = tagsArray[0];
+      }
+    } catch {
+      // tags might be a plain string
+      category = event.tags;
+    }
   }
 
   return {
-    id: event.event_id ? String(event.event_id) : (event.event_uuid || String(Date.now())),
+    id: event.id ? String(event.id) : event.event_uuid,
     title,
     subtitle: event.subtitle?.trim() || null,
     summary: summary.length > 200 ? summary.substring(0, 197) + '...' : summary,
@@ -221,38 +135,28 @@ function mapEventToKoralmEvent(event: EventApiResponse): KoralmEvent {
     screenshotUrl,
     isImageScreenshot,
     publishedAt: event.published_at || null,
-    sourceName: event.media?.[0]?.source_name || null,
-    category: event.tags?.[0] || null,
+    sourceName: null, // v2 doesn't include source_name in event response
+    category,
   };
 }
 
+/**
+ * Fetch events from EventCrawler v2 API using the SDK
+ */
 export async function fetchKoralmEvents(
   limit: number = 300
 ): Promise<KoralmEvent[]> {
-  const baseUrl = resolveApiBaseUrl();
+  const api = createEventsApi();
 
-  const url = `${baseUrl}/events?limit=${limit}`;
-
-  console.log('[KoralmAPI] Fetching events from:', url);
+  console.log('[KoralmAPI] Fetching events from:', resolveApiBaseUrl());
 
   try {
-    const response = await fetch(url, { cache: 'no-store' });
-
-    if (!response.ok) {
-      console.error('[KoralmAPI] Request failed:', response.status);
-      return [];
-    }
-
-    const data = await response.json();
-    const events = Array.isArray(data.events) ? data.events : [];
+    const response = await api.listEventsApiV1EventsGet({ limit });
+    const events = response.data;
 
     console.log(`[KoralmAPI] Loaded ${events.length} events`);
 
-    // DEBUG: Log first 3 events with media to see structure
-    const eventsWithMedia = events.filter((e: any) => e.media && e.media.length > 0).slice(0, 3);
-    console.log('[KoralmAPI] First 3 events with media (raw):', eventsWithMedia);
-
-    return events.map((event: any) => mapEventToKoralmEvent(event));
+    return events.map(mapEventToKoralmEvent);
   } catch (error) {
     console.error('[KoralmAPI] Fetch failed:', error);
     return [];

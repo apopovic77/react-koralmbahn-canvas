@@ -12,6 +12,7 @@
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.17",
     "arkturian-canvas-engine": "^1.0.18",
+    "eventcrawler-api-sdk": "^1.0.1",
     "lucide-react": "^0.555.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
