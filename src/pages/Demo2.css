@@ -122,19 +122,85 @@
   transform: translateX(20px);
 }
 
+/* Controls Container */
+.demo2__controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Card Width Slider */
+.demo2__slider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  color: #94a3b8;
+}
+
+.demo2__slider label {
+  min-width: 140px;
+  color: #f8fafc;
+}
+
+.demo2__slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 150px;
+  height: 6px;
+  background: rgba(100, 116, 139, 0.5);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.demo2__slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: #facc15;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s;
+}
+
+.demo2__slider input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.demo2__slider input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: #facc15;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.demo2__column-count {
+  min-width: 80px;
+  text-align: right;
+  color: #facc15;
+  font-weight: 500;
+}
+
 /* Cards Grid - Masonry Layout */
 .demo2__grid {
   display: flex;
-  gap: 1.5rem;
-  max-width: 1800px;
-  margin: 0 auto;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .demo2__column {
-  flex: 1;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
 }
 
 /* Responsive */
@@ -151,16 +217,34 @@
     font-size: 1rem;
   }
 
+  .demo2__controls {
+    gap: 0.75rem;
+  }
+
   .demo2__toggle {
     font-size: 0.75rem;
     padding: 0.4rem 0.75rem;
   }
 
-  .demo2__grid {
-    gap: 1rem;
+  .demo2__slider {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 1rem;
   }
 
-  .demo2__column {
-    gap: 1rem;
+  .demo2__slider label {
+    min-width: auto;
+    font-size: 0.75rem;
+  }
+
+  .demo2__slider input[type="range"] {
+    width: 120px;
+  }
+
+  .demo2__column-count {
+    min-width: auto;
+    font-size: 0.75rem;
   }
 }

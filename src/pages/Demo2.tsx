@@ -21,11 +21,17 @@ function useWindowWidth() {
   return width;
 }
 
+// Card width constraints
+const MIN_CARD_WIDTH = 200;
+const MAX_CARD_WIDTH = 600;
+const DEFAULT_CARD_WIDTH = 350;
+const GAP = 24; // Gap between cards
+
 /**
  * Demo2 Page - Premium Card Grid Layout
  *
  * Features:
- * - Responsive masonry grid (1-4 columns)
+ * - Responsive masonry grid with configurable card width
  * - Premium dark theme with gold accents
  * - Toggle to filter screenshot images
  * - Playfair Display + Inter typography
@@ -34,6 +40,7 @@ export default function Demo2() {
   const [events, setEvents] = useState<KoralmEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [hideScreenshots, setHideScreenshots] = useState(false);
+  const [cardWidth, setCardWidth] = useState(DEFAULT_CARD_WIDTH);
   const windowWidth = useWindowWidth();
 
   // Load events on mount
@@ -58,13 +65,15 @@ export default function Demo2() {
     return events.filter((event) => !event.isImageScreenshot && event.imageUrl);
   }, [events, hideScreenshots]);
 
-  // Calculate columns based on window width
+  // Calculate columns based on window width and card width
   const columnCount = useMemo(() => {
-    if (windowWidth < 640) return 1;
-    if (windowWidth < 1024) return 2;
-    if (windowWidth < 1536) return 3;
-    return 4;
-  }, [windowWidth]);
+    // Available width = window width minus padding (GAP on each side)
+    const availableWidth = windowWidth - GAP * 2;
+    // Calculate how many cards fit: (availableWidth + GAP) / (cardWidth + GAP)
+    const count = Math.floor((availableWidth + GAP) / (cardWidth + GAP));
+    // Ensure at least 1 column
+    return Math.max(1, count);
+  }, [windowWidth, cardWidth]);
 
   // Distribute events into columns (masonry style)
   const columns = useMemo(() => {
@@ -102,25 +111,55 @@ export default function Demo2() {
         </h1>
         <p className="demo2__subtitle">Premium Artikel Collection</p>
 
-        {/* Toggle Switch */}
-        <div className="demo2__toggle">
-          <span className={!hideScreenshots ? 'active' : ''}>Alle Bilder</span>
-          <button
-            onClick={() => setHideScreenshots(!hideScreenshots)}
-            className={`demo2__toggle-switch ${hideScreenshots ? 'on' : ''}`}
-            role="switch"
-            aria-checked={hideScreenshots}
-          >
-            <span className="demo2__toggle-knob" />
-          </button>
-          <span className={hideScreenshots ? 'active' : ''}>Nur Hero Images</span>
+        {/* Controls Row */}
+        <div className="demo2__controls">
+          {/* Toggle Switch */}
+          <div className="demo2__toggle">
+            <span className={!hideScreenshots ? 'active' : ''}>Alle Bilder</span>
+            <button
+              onClick={() => setHideScreenshots(!hideScreenshots)}
+              className={`demo2__toggle-switch ${hideScreenshots ? 'on' : ''}`}
+              role="switch"
+              aria-checked={hideScreenshots}
+            >
+              <span className="demo2__toggle-knob" />
+            </button>
+            <span className={hideScreenshots ? 'active' : ''}>Nur Hero Images</span>
+          </div>
+
+          {/* Card Width Slider */}
+          <div className="demo2__slider">
+            <label htmlFor="card-width">Kartenbreite: {cardWidth}px</label>
+            <input
+              id="card-width"
+              type="range"
+              min={MIN_CARD_WIDTH}
+              max={MAX_CARD_WIDTH}
+              value={cardWidth}
+              onChange={(e) => setCardWidth(Number(e.target.value))}
+            />
+            <span className="demo2__column-count">{columnCount} Spalten</span>
+          </div>
         </div>
       </header>
 
       {/* Cards Grid */}
-      <div className="demo2__grid">
+      <div
+        className="demo2__grid"
+        style={{
+          gap: `${GAP}px`,
+          padding: `${GAP}px`,
+        }}
+      >
         {columns.map((colEvents, colIndex) => (
-          <div key={colIndex} className="demo2__column">
+          <div
+            key={colIndex}
+            className="demo2__column"
+            style={{
+              width: `${cardWidth}px`,
+              gap: `${GAP}px`,
+            }}
+          >
             {colEvents.map((event) => (
               <PremiumCard key={event.id} event={event} />
             ))}
