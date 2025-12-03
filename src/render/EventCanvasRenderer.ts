@@ -136,7 +136,7 @@ export class EventCanvasRenderer {
 
     // Render axis only in dayTimelinePortrait mode (portrait - horizontal axis at bottom)
     if (layoutMode === 'dayTimelinePortrait' && axisColumns) {
-      this.drawPortraitAxis(ctx, axisColumns, bounds);
+      this.drawPortraitAxis(ctx, axisColumns, bounds, currentScale);
     }
 
     // Render date headers in singleRow mode
@@ -194,17 +194,25 @@ export class EventCanvasRenderer {
   /**
    * Draw horizontal axis at TOP for Portrait layout
    * Each column represents a day with date label and article count
+   *
+   * LOD behavior:
+   * - Detail mode (wide columns): Horizontal date + article count
+   * - Compact mode (narrow columns): Vertical rotated day number only
    */
   private drawPortraitAxis(
     ctx: CanvasRenderingContext2D,
     axisColumns: DayAxisColumn[],
     bounds: DayTimelineBounds | DayTimelinePortraitBounds | null,
+    currentScale: number,
   ): void {
     ctx.save(); // Save context state to prevent text alignment leaking to cards
 
     const axisHeight = 80; // Fixed axis height
     const axisY = 0; // Axis at top
     const totalWidth = bounds?.width ?? window.innerWidth;
+
+    // LOD threshold: switch to compact mode when screen-space column width < 80px
+    const LOD_THRESHOLD = 80;
 
     // Draw axis background
     ctx.fillStyle = '#0f172a';
@@ -224,17 +232,48 @@ export class EventCanvasRenderer {
       ctx.fillStyle = col.index % 2 === 0 ? '#111b2f' : '#0d1526';
       ctx.fillRect(col.x, axisY, col.width, axisHeight);
 
-      // Date label (centered horizontally in column)
-      ctx.fillStyle = '#e2e8f0';
-      ctx.font = 'bold 16px "Bricolage Grotesque", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(col.label.toUpperCase(), col.x + col.width / 2, axisY + 25);
+      // Calculate screen-space column width
+      const screenColWidth = col.width * currentScale;
+      const isCompactMode = screenColWidth < LOD_THRESHOLD;
 
-      // Article count
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '12px "Bricolage Grotesque", sans-serif';
-      ctx.fillText(`${col.eventCount} Artikel`, col.x + col.width / 2, axisY + 50);
+      if (isCompactMode) {
+        // Compact mode: Vertical rotated day label only
+        // Extract day number from label (e.g., "MO 07.11." -> "07")
+        const dayMatch = col.label.match(/(\d{2})\./);
+        const dayNumber = dayMatch ? dayMatch[1] : col.label.slice(0, 2);
+
+        ctx.save();
+
+        // Move to column center
+        const centerX = col.x + col.width / 2;
+        const centerY = axisY + axisHeight / 2;
+
+        ctx.translate(centerX, centerY);
+        ctx.rotate(-Math.PI / 2); // Rotate 90° counter-clockwise
+
+        // Font size limited to column width (in world space)
+        const fontSize = Math.min(col.width * 0.7, 24);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = `bold ${fontSize}px "Bricolage Grotesque", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(dayNumber, 0, 0);
+
+        ctx.restore();
+      } else {
+        // Detail mode: Full horizontal date + article count
+        // Date label (centered horizontally in column)
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 16px "Bricolage Grotesque", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(col.label.toUpperCase(), col.x + col.width / 2, axisY + 25);
+
+        // Article count
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px "Bricolage Grotesque", sans-serif';
+        ctx.fillText(`${col.eventCount} Artikel`, col.x + col.width / 2, axisY + 50);
+      }
     });
 
     ctx.restore(); // Restore context state
