@@ -244,19 +244,19 @@ export class EventCanvasRenderer {
 
         ctx.save();
 
-        // Move to column center
-        const centerX = col.x + col.width / 2;
-        const centerY = axisY + axisHeight / 2;
+        // Position at bottom of axis with padding
+        const padding = 10;
+        const anchorX = col.x + col.width / 2;
+        const anchorY = axisY + axisHeight - padding; // Bottom aligned
 
-        ctx.translate(centerX, centerY);
+        ctx.translate(anchorX, anchorY);
         ctx.rotate(-Math.PI / 2); // Rotate 90° counter-clockwise
 
         // Font size limited to column width (text is rotated, so width = available height)
-        // Can be larger since we have 80px axis height to work with
-        const fontSize = Math.min(col.width * 0.8, 300);
+        const fontSize = Math.min(col.width * 0.8, 200);
         ctx.fillStyle = '#e2e8f0';
         ctx.font = `bold ${fontSize}px "Bricolage Grotesque", sans-serif`;
-        ctx.textAlign = 'center';
+        ctx.textAlign = 'left'; // Left = bottom after rotation
         ctx.textBaseline = 'middle';
         ctx.fillText(dayNumber, 0, 0);
 
