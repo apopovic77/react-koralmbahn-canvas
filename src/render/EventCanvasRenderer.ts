@@ -202,7 +202,7 @@ export class EventCanvasRenderer {
   private drawPortraitAxis(
     ctx: CanvasRenderingContext2D,
     axisColumns: DayAxisColumn[],
-    bounds: DayTimelineBounds | DayTimelinePortraitBounds | null,
+    _bounds: DayTimelineBounds | DayTimelinePortraitBounds | null,
     currentScale: number,
   ): void {
     ctx.save(); // Save context state to prevent text alignment leaking to cards
