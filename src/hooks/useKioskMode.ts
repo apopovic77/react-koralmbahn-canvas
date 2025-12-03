@@ -3,6 +3,7 @@ import type { ViewportTransform } from 'arkturian-canvas-engine';
 import type { KoralmEvent } from '../types/koralmbahn';
 
 export type KioskMode = 'overview' | 'article';
+export type KioskStrategy = 'random' | 'sequential';
 
 interface UseKioskModeOptions {
   viewport: ViewportTransform | null;
@@ -11,6 +12,7 @@ interface UseKioskModeOptions {
   canvasHeight: number;
   isManualMode: boolean;
   isKioskModeEnabled?: boolean;
+  kioskStrategy?: KioskStrategy;
   overviewDuration?: number;
   articleDuration?: number;
   transitionSpeed?: number;
@@ -19,17 +21,19 @@ interface UseKioskModeOptions {
 
 interface UseKioskModeReturn {
   kioskMode: KioskMode;
+  kioskStrategy: KioskStrategy;
   selectedArticleIndex: number;
   articlesViewedCount: number;
   priorityQueueLength: number;
   zoomToOverview: () => void;
   zoomToArticle: (index: number) => void;
   stopKiosk: () => void;
+  setKioskStrategy: (strategy: KioskStrategy) => void;
 }
 
 const DEFAULT_OVERVIEW_DURATION = 10000; // 10 seconds
 const DEFAULT_ARTICLE_DURATION = 10000; // 10 seconds
-const DEFAULT_TRANSITION_SPEED = 0.06; // speedFactor: 3% per frame = slow smooth animation
+const DEFAULT_TRANSITION_SPEED = 0.06; // speedFactor: 6% per frame
 const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 8;
 
 export function useKioskMode({
@@ -39,23 +43,25 @@ export function useKioskMode({
   canvasHeight,
   isManualMode,
   isKioskModeEnabled = true,
+  kioskStrategy: initialStrategy = 'sequential',
   overviewDuration = DEFAULT_OVERVIEW_DURATION,
   articleDuration = DEFAULT_ARTICLE_DURATION,
   transitionSpeed = DEFAULT_TRANSITION_SPEED,
   articlesBeforeOverview = DEFAULT_ARTICLES_BEFORE_OVERVIEW,
 }: UseKioskModeOptions): UseKioskModeReturn {
   const [kioskMode, setKioskMode] = useState<KioskMode>('article'); // Start with article, not overview
+  const [kioskStrategy, setKioskStrategy] = useState<KioskStrategy>(initialStrategy);
   const [selectedArticleIndex, setSelectedArticleIndex] = useState<number>(0);
   const [articlesViewedCount, setArticlesViewedCount] = useState<number>(0);
   const kioskTimerRef = useRef<number | null>(null);
 
-  // Priority queue for new events
+  // Priority queue for new events (only used in random mode)
   const [priorityQueue, setPriorityQueue] = useState<string[]>([]);
   const knownEventIdsRef = useRef<Set<string>>(new Set());
 
-  // Detect new events and add to priority queue
+  // Detect new events and add to priority queue (only in random mode)
   useEffect(() => {
-    if (events.length === 0) return;
+    if (events.length === 0 || kioskStrategy !== 'random') return;
 
     const currentIds = new Set(events.map(e => e.id));
     const newEventIds: string[] = [];
@@ -75,9 +81,9 @@ export function useKioskMode({
       console.log(`[Kiosk] New events detected: ${newEventIds.length} - adding to priority queue`);
       setPriorityQueue(prev => [...newEventIds, ...prev]);
     }
-  }, [events]);
+  }, [events, kioskStrategy]);
 
-  const zoomToOverview = () => {
+  const zoomToOverview = useCallback(() => {
     if (!viewport || events.length === 0) return;
 
     // Calculate scale to fit all content in viewport
@@ -110,10 +116,10 @@ export function useKioskMode({
     viewport.speedFactor = transitionSpeed;
 
     console.log('[Kiosk] Zooming to overview');
-  };
+  }, [viewport, events, canvasWidth, canvasHeight, transitionSpeed]);
 
-  const zoomToArticle = (index: number) => {
-    if (!viewport || index >= events.length) return;
+  const zoomToArticle = useCallback((index: number) => {
+    if (!viewport || index >= events.length || index < 0) return;
 
     const event = events[index];
     if (!event.x || !event.y || !event.width || !event.height) return;
@@ -134,18 +140,28 @@ export function useKioskMode({
     viewport.speedFactor = transitionSpeed;
 
     console.log(`[Kiosk] Zooming to article ${index + 1}/${events.length}: ${event.title}`);
-  };
+  }, [viewport, events, canvasWidth, canvasHeight, transitionSpeed]);
 
-  const stopKiosk = () => {
+  const stopKiosk = useCallback(() => {
     if (kioskTimerRef.current) {
       clearTimeout(kioskTimerRef.current);
       kioskTimerRef.current = null;
     }
-  };
+  }, []);
 
-  // Get next article index - prioritize new events, then random
+  // Get next article index based on strategy
   const getNextArticleIndex = useCallback((): number => {
-    // Check if we have priority events (newly arrived)
+    if (kioskStrategy === 'sequential') {
+      // Sequential: go backwards (newest first, index 0 = newest)
+      // When at end, wrap to beginning
+      const nextIndex = selectedArticleIndex + 1;
+      if (nextIndex >= events.length) {
+        return 0; // Wrap to first (newest)
+      }
+      return nextIndex;
+    }
+
+    // Random mode: check priority queue first
     if (priorityQueue.length > 0) {
       const priorityEventId = priorityQueue[0];
       const priorityIndex = events.findIndex(e => e.id === priorityEventId);
@@ -163,9 +179,16 @@ export function useKioskMode({
 
     // Fall back to random
     return Math.floor(Math.random() * events.length);
-  }, [events, priorityQueue]);
+  }, [events, priorityQueue, selectedArticleIndex, kioskStrategy]);
 
-  const scheduleNextTransition = () => {
+  // Check if we completed a full cycle (sequential mode)
+  const isFullCycleComplete = useCallback((): boolean => {
+    if (kioskStrategy !== 'sequential') return false;
+    // Full cycle when we've viewed all articles
+    return articlesViewedCount >= events.length;
+  }, [kioskStrategy, articlesViewedCount, events.length]);
+
+  const scheduleNextTransition = useCallback(() => {
     if (kioskTimerRef.current) {
       clearTimeout(kioskTimerRef.current);
     }
@@ -173,25 +196,30 @@ export function useKioskMode({
     if (kioskMode === 'overview') {
       // Switch to first article after overview duration
       kioskTimerRef.current = window.setTimeout(() => {
-        const nextIndex = getNextArticleIndex();
-        setSelectedArticleIndex(nextIndex);
-        setArticlesViewedCount(1); // Reset counter and start at 1
+        const startIndex = kioskStrategy === 'sequential' ? 0 : getNextArticleIndex();
+        setSelectedArticleIndex(startIndex);
+        setArticlesViewedCount(1);
         setKioskMode('article');
-        zoomToArticle(nextIndex);
+        zoomToArticle(startIndex);
       }, overviewDuration);
     } else {
       // In article mode
       kioskTimerRef.current = window.setTimeout(() => {
-        // Check if we have priority events - if so, skip to them even if we haven't viewed enough articles
-        const hasPriorityEvents = priorityQueue.length > 0;
+        // Check if we have priority events (random mode only)
+        const hasPriorityEvents = kioskStrategy === 'random' && priorityQueue.length > 0;
 
-        if (!hasPriorityEvents && articlesViewedCount >= articlesBeforeOverview) {
-          // Viewed enough articles and no priority events, return to overview
+        // Check if should go to overview
+        const shouldShowOverview = kioskStrategy === 'sequential'
+          ? isFullCycleComplete()
+          : (!hasPriorityEvents && articlesViewedCount >= articlesBeforeOverview);
+
+        if (shouldShowOverview) {
+          // Return to overview
           setArticlesViewedCount(0);
           setKioskMode('overview');
           zoomToOverview();
         } else {
-          // Switch to next article (priority or random)
+          // Switch to next article
           const nextIndex = getNextArticleIndex();
           setSelectedArticleIndex(nextIndex);
           setArticlesViewedCount(prev => prev + 1);
@@ -199,7 +227,19 @@ export function useKioskMode({
         }
       }, articleDuration);
     }
-  };
+  }, [
+    kioskMode,
+    kioskStrategy,
+    priorityQueue.length,
+    articlesViewedCount,
+    articlesBeforeOverview,
+    overviewDuration,
+    articleDuration,
+    getNextArticleIndex,
+    isFullCycleComplete,
+    zoomToOverview,
+    zoomToArticle,
+  ]);
 
   // Kiosk mode auto-zoom system
   useEffect(() => {
@@ -223,15 +263,24 @@ export function useKioskMode({
     return () => {
       stopKiosk();
     };
-  }, [kioskMode, selectedArticleIndex, articlesViewedCount, events, isManualMode, isKioskModeEnabled, priorityQueue]);
+  }, [kioskMode, selectedArticleIndex, articlesViewedCount, events, isManualMode, isKioskModeEnabled, priorityQueue, kioskStrategy]);
+
+  // Reset when strategy changes
+  useEffect(() => {
+    setArticlesViewedCount(0);
+    setSelectedArticleIndex(0);
+    console.log(`[Kiosk] Strategy changed to: ${kioskStrategy}`);
+  }, [kioskStrategy]);
 
   return {
     kioskMode,
+    kioskStrategy,
     selectedArticleIndex,
     articlesViewedCount,
     priorityQueueLength: priorityQueue.length,
     zoomToOverview,
     zoomToArticle,
     stopKiosk,
+    setKioskStrategy,
   };
 }

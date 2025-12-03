@@ -225,7 +225,7 @@ function App() {
   };
 
   // Kiosk mode hook
-  const { kioskMode, articlesViewedCount } = useKioskMode({
+  const { kioskMode, kioskStrategy, articlesViewedCount, setKioskStrategy } = useKioskMode({
     viewport: viewportRef.current,
     events: positionedEvents,
     canvasWidth: window.innerWidth,
@@ -829,6 +829,28 @@ function App() {
         <div>F1: 3D Mode {is3DMode ? '✅' : '❌'}</div>
         <div>F2: LOD {isLODEnabled ? '✅' : '❌'}</div>
         <div>F3: Kiosk {isKioskModeEnabled ? '✅' : '❌'}</div>
+        {isKioskModeEnabled && (
+          <div style={{ marginLeft: '12px', marginTop: '4px', marginBottom: '4px' }}>
+            <button
+              onClick={() => setKioskStrategy(kioskStrategy === 'random' ? 'sequential' : 'random')}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                background: kioskStrategy === 'sequential' ? '#8b5cf6' : '#3b82f6',
+                color: '#fff',
+                fontWeight: 'bold',
+              }}
+            >
+              {kioskStrategy === 'random' ? '🎲 Random' : '📋 Sequential'}
+            </button>
+            <span style={{ fontSize: '10px', opacity: 0.6, marginLeft: '8px' }}>
+              {kioskStrategy === 'random' ? '(8 vor Overview)' : '(alle → Overview → repeat)'}
+            </span>
+          </div>
+        )}
         <div>F4: High-Res {isHighResEnabled ? '✅' : '❌'}</div>
         <div>F6: SciFi Dashboard {showSciFiDashboard ? '✅' : '❌'}</div>
         <div>F10: Card Style 🎨 {cardStyle}</div>
