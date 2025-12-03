@@ -43,14 +43,14 @@ export function useKioskMode({
   canvasHeight,
   isManualMode,
   isKioskModeEnabled = true,
-  kioskStrategy: initialStrategy = 'sequential',
+  kioskStrategy: _initialStrategy = 'sequential',
   overviewDuration = DEFAULT_OVERVIEW_DURATION,
   articleDuration = DEFAULT_ARTICLE_DURATION,
   transitionSpeed = DEFAULT_TRANSITION_SPEED,
   articlesBeforeOverview = DEFAULT_ARTICLES_BEFORE_OVERVIEW,
 }: UseKioskModeOptions): UseKioskModeReturn {
-  const [kioskMode, setKioskMode] = useState<KioskMode>('article'); // Start with article, not overview
-  const [kioskStrategy, setKioskStrategy] = useState<KioskStrategy>(initialStrategy);
+  const [kioskMode, setKioskMode] = useState<KioskMode>('overview'); // Start with overview
+  const [kioskStrategy, setKioskStrategy] = useState<KioskStrategy>('random'); // Always use weighted random
   const [selectedArticleIndex, setSelectedArticleIndex] = useState<number>(0);
   const [articlesViewedCount, setArticlesViewedCount] = useState<number>(0);
   const kioskTimerRef = useRef<number | null>(null);

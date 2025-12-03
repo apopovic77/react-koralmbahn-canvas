@@ -112,11 +112,12 @@ export class GlowBorder {
     const segmentLength = (trailLength * perimeter) / segments;
 
     for (let i = 0; i < segments; i++) {
-      const segmentStart = headPosition - (i * segmentLength);
-      const segmentEnd = headPosition - ((i + 1) * segmentLength);
+      let segmentStart = headPosition - (i * segmentLength);
+      let segmentEnd = headPosition - ((i + 1) * segmentLength);
 
-      // Skip if segment is fully behind (wrapped)
-      if (segmentEnd < 0 && segmentStart < 0) continue;
+      // Normalize to always be positive (wrap around perimeter)
+      while (segmentStart < 0) segmentStart += perimeter;
+      while (segmentEnd < 0) segmentEnd += perimeter;
 
       // Calculate opacity (fades toward tail)
       const opacity = 1 - (i / segments);
@@ -126,9 +127,18 @@ export class GlowBorder {
       ctx.strokeStyle = this.interpolateColor(color, secondaryColor, t, opacity);
       ctx.shadowColor = this.interpolateColor(color, secondaryColor, t, opacity * 0.8);
 
-      // Draw segment
+      // Draw segment - handle wrap-around case
       ctx.beginPath();
-      this.tracePathSegment(ctx, x, y, width, height, radius, segmentStart, segmentEnd, perimeter);
+      if (segmentEnd > segmentStart) {
+        // Wrapped around - draw two parts
+        this.tracePathSegmentSimple(ctx, x, y, width, height, radius, 0, segmentStart, perimeter);
+        ctx.stroke();
+        ctx.beginPath();
+        this.tracePathSegmentSimple(ctx, x, y, width, height, radius, segmentEnd, perimeter, perimeter);
+      } else {
+        // Normal case - draw from end to start (since we go backwards)
+        this.tracePathSegmentSimple(ctx, x, y, width, height, radius, segmentEnd, segmentStart, perimeter);
+      }
       ctx.stroke();
     }
 
@@ -261,36 +271,6 @@ export class GlowBorder {
 
       default:
         return { x, y };
-    }
-  }
-
-  /**
-   * Trace a segment of the path between two distances
-   */
-  private tracePathSegment(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    radius: number,
-    startDist: number,
-    endDist: number,
-    perimeter: number,
-  ): void {
-    // Normalize distances
-    let start = startDist % perimeter;
-    let end = endDist % perimeter;
-    if (start < 0) start += perimeter;
-    if (end < 0) end += perimeter;
-
-    // Handle wrap-around
-    if (end > start) {
-      // Wrapped around - draw two segments
-      this.tracePathSegmentSimple(ctx, x, y, width, height, radius, 0, start, perimeter);
-      this.tracePathSegmentSimple(ctx, x, y, width, height, radius, end, perimeter, perimeter);
-    } else {
-      this.tracePathSegmentSimple(ctx, x, y, width, height, radius, end, start, perimeter);
     }
   }
 

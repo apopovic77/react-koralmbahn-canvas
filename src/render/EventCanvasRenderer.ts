@@ -52,7 +52,7 @@ interface RenderFrameParams {
   bounds: DayTimelineBounds | DayTimelinePortraitBounds | null;
   isLODEnabled: boolean;
   failedImages: Set<string>;
-  layoutMode: 'dayTimeline' | 'dayTimelinePortrait' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
+  layoutMode: 'dayTimeline' | 'dayTimelinePortrait' | 'dayTimelineVertical' | 'singleRow' | 'singleColumn' | 'masonryVertical' | 'masonryHorizontal';
   /** Optional map of current event data (with QR codes) to override stale node.data */
   eventMap?: Map<string, KoralmEvent>;
   /** Show debug info on cards (synced with F9 debug panel) */
@@ -67,6 +67,10 @@ interface RenderFrameParams {
   showCompactAxis?: boolean;
   /** Always show sentiment lines regardless of zoom level (default: true) */
   alwaysShowSentimentLines?: boolean;
+  /** Where bezier lines start: 'card' = from card center, 'axis' = from above date axis */
+  lineStartMode?: 'card' | 'axis' | 'axisToCard';
+  /** Color card images with sentiment color when in LOD mode (text hidden) */
+  colorLODWithSentiment?: boolean;
 }
 
 export class EventCanvasRenderer {
@@ -162,7 +166,9 @@ export class EventCanvasRenderer {
       isKioskMode,
       activeSentiment,
       showCompactAxis = true,
-      alwaysShowSentimentLines = false,
+      alwaysShowSentimentLines = true,
+      lineStartMode = 'card',
+      colorLODWithSentiment = false,
     } = params;
 
     const currentScale = viewport.scale;
@@ -173,6 +179,35 @@ export class EventCanvasRenderer {
     ctx.save();
     viewport.applyTransform(ctx);
 
+    // Calculate delta time for animations
+    const now = performance.now();
+    const deltaTime = this.lastFrameTime > 0 ? now - this.lastFrameTime : 16;
+    this.lastFrameTime = now;
+
+    // Update and render sentiment lines FIRST (so axis is drawn on top)
+    // If alwaysShowSentimentLines is true, always show them
+    // Otherwise, only show when zoomed out (LOD mode, scale < 0.4)
+    const showSentimentLines = alwaysShowSentimentLines || (isLODEnabled && currentScale < 0.4);
+    this.sentimentLines.updateVisibility(showSentimentLines, deltaTime);
+    this.sentimentLines.setConfig({ lineStartMode });
+
+    if (this.sentimentLines.isVisible()) {
+      // Vertical mode for singleColumn and dayTimelineVertical layouts: sentiment nodes on the left
+      const isVerticalLayout = layoutMode === 'singleColumn' || layoutMode === 'dayTimelineVertical';
+      this.sentimentLines.render(
+        ctx,
+        nodes,
+        ctx.canvas.width,
+        ctx.canvas.height,
+        currentScale,
+        viewport.offset.x,
+        viewport.offset.y,
+        axisColumns,
+        isVerticalLayout,
+      );
+    }
+
+    // Render axis AFTER sentiment lines (so axis labels are on top)
     // Render axis only in dayTimeline mode (landscape - vertical axis on left)
     if (layoutMode === 'dayTimeline') {
       this.drawAxis(ctx, axisRows, metrics, bounds);
@@ -183,32 +218,14 @@ export class EventCanvasRenderer {
       this.drawPortraitAxis(ctx, axisColumns, bounds, currentScale, showCompactAxis);
     }
 
+    // Render axis for dayTimelineVertical mode (vertical - left axis with dates as rows)
+    if (layoutMode === 'dayTimelineVertical') {
+      this.drawVerticalAxis(ctx, axisRows, bounds);
+    }
+
     // Render date headers in singleRow mode
     if (layoutMode === 'singleRow') {
       this.drawSingleRowDateHeaders(ctx, nodes);
-    }
-
-    // Calculate delta time for animations
-    const now = performance.now();
-    const deltaTime = this.lastFrameTime > 0 ? now - this.lastFrameTime : 16;
-    this.lastFrameTime = now;
-
-    // Update and render sentiment lines
-    // If alwaysShowSentimentLines is true, always show them
-    // Otherwise, only show when zoomed out (LOD mode, scale < 0.4)
-    const showSentimentLines = alwaysShowSentimentLines || (isLODEnabled && currentScale < 0.4);
-    this.sentimentLines.updateVisibility(showSentimentLines, deltaTime);
-
-    if (this.sentimentLines.isVisible()) {
-      this.sentimentLines.render(
-        ctx,
-        nodes,
-        ctx.canvas.width,
-        ctx.canvas.height,
-        currentScale,
-        viewport.offset.x,
-        viewport.offset.y,
-      );
     }
 
     this.drawEvents(ctx, {
@@ -223,6 +240,7 @@ export class EventCanvasRenderer {
       activeCardIndex,
       isKioskMode,
       activeSentiment,
+      colorLODWithSentiment,
     });
 
     ctx.restore();
@@ -357,6 +375,53 @@ export class EventCanvasRenderer {
     ctx.restore(); // Restore context state
   }
 
+  /**
+   * Draw vertical axis on LEFT for dayTimelineVertical layout
+   * Each row represents a day with date label and article count
+   */
+  private drawVerticalAxis(
+    ctx: CanvasRenderingContext2D,
+    axisRows: DayAxisRow[],
+    _bounds: DayTimelineBounds | DayTimelinePortraitBounds | null,
+  ): void {
+    const axisWidth = 220; // Fixed axis width
+    const axisX = 0; // Axis at left
+
+    // Draw background for axis column
+    ctx.fillStyle = '#0f172a';
+    const totalHeight = axisRows.length > 0
+      ? axisRows[axisRows.length - 1].y + axisRows[axisRows.length - 1].height
+      : 0;
+    ctx.fillRect(axisX, 0, axisWidth, totalHeight + 100);
+
+    // Separator line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(axisWidth - 8, 0);
+    ctx.lineTo(axisWidth - 8, totalHeight + 100);
+    ctx.stroke();
+
+    // Draw each row
+    axisRows.forEach((row) => {
+      // Alternating background
+      ctx.fillStyle = row.index % 2 === 0 ? '#111b2f' : '#0d1526';
+      ctx.fillRect(axisX, row.y, axisWidth, row.height);
+
+      // Article count (at bottom of row)
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '12px "Bricolage Grotesque", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${row.eventCount} Artikel`, 20, row.y + row.height - 20);
+
+      // Date label (at top of row)
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'bold 20px "Bricolage Grotesque", sans-serif';
+      ctx.fillText(row.label.toUpperCase(), 20, row.y + 30);
+    });
+  }
+
   private drawSingleRowDateHeaders(ctx: CanvasRenderingContext2D, nodes: LayoutNode<KoralmEvent>[]): void {
     nodes.forEach((node) => {
       const event = node.data;
@@ -409,9 +474,10 @@ export class EventCanvasRenderer {
       activeCardIndex?: number;
       isKioskMode?: boolean;
       activeSentiment?: number | null;
+      colorLODWithSentiment?: boolean;
     },
   ): void {
-    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport, eventMap, showDebug, activeCardIndex, isKioskMode, activeSentiment } = params;
+    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport, eventMap, showDebug, activeCardIndex, isKioskMode, activeSentiment, colorLODWithSentiment } = params;
 
     // Update glow border animation
     this.glowBorder.updateWithTime(performance.now());
@@ -491,6 +557,36 @@ export class EventCanvasRenderer {
 
       // Use new card system for rendering
       this.renderCard(ctx, event, x, y, width, height, img, lodState, showDebug, currentScale);
+
+      // Apply sentiment color overlay in LOD mode when text is hidden
+      // Fade in/out based on textOpacity: fully visible when textOpacity=0, invisible when textOpacity>=0.5
+      if (colorLODWithSentiment && lodState.textOpacity < 0.5) {
+        const sentiment = event.sentiment ?? 0;
+
+        // Calculate overlay opacity: inverse of textOpacity, scaled to max 0.4
+        // When textOpacity=0 → overlayOpacity=0.4 (full color)
+        // When textOpacity=0.5 → overlayOpacity=0 (no color)
+        const overlayOpacity = (1 - lodState.textOpacity * 2) * 0.4;
+
+        let r: number, g: number, b: number;
+
+        if (sentiment > 0.3) {
+          // Positive: Cyan
+          r = 0; g = 255; b = 255;
+        } else if (sentiment < -0.3) {
+          // Negative: Magenta
+          r = 255; g = 0; b = 255;
+        } else {
+          // Neutral: Yellow
+          r = 255; g = 255; b = 0;
+        }
+
+        ctx.save();
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${overlayOpacity})`;
+        ctx.fillRect(x, y, width, height);
+        ctx.restore();
+      }
+
     });
 
     // Draw glow border around active kiosk card (after all cards so it's on top)

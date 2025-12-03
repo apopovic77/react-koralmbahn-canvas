@@ -15,6 +15,8 @@ import { QRCodeFactory } from './services/QRCodeFactory';
 import { DayTimelineLayouter, type DayAxisRow, type DayTimelineBounds, type DayTimelineLayouterConfig } from './layouts/DayTimelineLayouter';
 import { DayTimelinePortraitLayouter, type DayAxisColumn, type DayTimelinePortraitBounds } from './layouts/DayTimelinePortraitLayouter';
 import { SingleRowTimelineLayouter, type SingleRowBounds } from './layouts/SingleRowTimelineLayouter';
+import { SingleColumnTimelineLayouter, type SingleColumnBounds } from './layouts/SingleColumnTimelineLayouter';
+import { DayTimelineVerticalLayouter, type DayTimelineVerticalBounds } from './layouts/DayTimelineVerticalLayouter';
 import { MasonryLayouter } from './layouts/MasonryLayouter';
 import { EventCanvasRenderer } from './render/EventCanvasRenderer';
 import { CanvasViewportController } from './viewport/CanvasViewportController';
@@ -24,8 +26,8 @@ import SciFiDashboard from './effects/SciFiDashboard/SciFiDashboard';
 // Viewport Mode: 3 modes for different border checking behaviors
 type ViewportMode = 'off' | 'rectBounds' | 'snapToContent';
 
-// Layout Mode: 5 modes for different layout algorithms
-type LayoutMode = 'dayTimeline' | 'dayTimelinePortrait' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
+// Layout Mode: 7 modes for different layout algorithms
+type LayoutMode = 'dayTimeline' | 'dayTimelinePortrait' | 'dayTimelineVertical' | 'singleRow' | 'singleColumn' | 'masonryVertical' | 'masonryHorizontal';
 
 const PADDING = 15;
 
@@ -43,8 +45,12 @@ function getDefaultCardStyleForLayout(layoutMode: LayoutMode): CardStyle {
       return 'standard'; // Standard cards: 50% image, 50% text
     case 'dayTimelinePortrait':
       return 'standard'; // Standard cards for portrait monitors
+    case 'dayTimelineVertical':
+      return 'standard'; // Standard cards for vertical timeline
     case 'singleRow':
       return 'standard'; // Standard cards: 50% image, 50% text
+    case 'singleColumn':
+      return 'standard'; // Standard cards for vertical column
     case 'masonryVertical':
       return 'catalog'; // Compact newspaper/catalog layout with variable height
     case 'masonryHorizontal':
@@ -63,6 +69,8 @@ function App() {
   const dayLayouterRef = useRef(new DayTimelineLayouter());
   const dayPortraitLayouterRef = useRef(new DayTimelinePortraitLayouter());
   const singleRowLayouterRef = useRef(new SingleRowTimelineLayouter());
+  const singleColumnLayouterRef = useRef(new SingleColumnTimelineLayouter());
+  const dayVerticalLayouterRef = useRef(new DayTimelineVerticalLayouter());
 
   // Masonry layouters need to be created inside component to access getImage
   const masonryVerticalLayouterRef = useRef<MasonryLayouter | null>(null);
@@ -91,6 +99,8 @@ function App() {
   const [isGlowBorderEnabled, setIsGlowBorderEnabled] = useState(true); // F11: Glow Border on active kiosk card (Default: ON)
   const [isMinGroupingEnabled, setIsMinGroupingEnabled] = useState(true); // F12: Min 2 per column grouping (Default: ON)
   const [showCompactAxis, setShowCompactAxis] = useState(false); // Compact axis mode when zoomed out (Default: OFF)
+  const [lineStartMode, setLineStartMode] = useState<'card' | 'axis' | 'axisToCard'>('axisToCard'); // Bezier lines start mode
+  const [colorLODWithSentiment, setColorLODWithSentiment] = useState(true); // Color images with sentiment in LOD mode (Default: ON)
   const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all'); // Sentiment filter
   const [heroImageOnly, setHeroImageOnly] = useState(false); // Only show events with hero images (not screenshots)
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -104,7 +114,7 @@ function App() {
 
   // Custom hooks
   const { getImage, loadHighResImage, preloadImages } = useImageCache();
-  const { updateLODState } = useLODTransitions();
+  const { updateLODState } = useLODTransitions({ cardLODThreshold: 180 });
 
   // Real-time sync - polls for changes every 60 seconds
   const {
@@ -534,6 +544,10 @@ function App() {
       layoutEngine.setLayouter(dayPortraitLayouterRef.current);
     } else if (layoutMode === 'singleRow') {
       layoutEngine.setLayouter(singleRowLayouterRef.current);
+    } else if (layoutMode === 'singleColumn') {
+      layoutEngine.setLayouter(singleColumnLayouterRef.current);
+    } else if (layoutMode === 'dayTimelineVertical') {
+      layoutEngine.setLayouter(dayVerticalLayouterRef.current);
     } else if (layoutMode === 'masonryVertical') {
       if (masonryVerticalLayouterRef.current) {
         layoutEngine.setLayouter(masonryVerticalLayouterRef.current);
@@ -573,7 +587,7 @@ function App() {
     layoutEngine.layout(viewportSize);
 
     // Get bounds based on current layout mode
-    let bounds: DayTimelineBounds | DayTimelinePortraitBounds | SingleRowBounds;
+    let bounds: DayTimelineBounds | DayTimelinePortraitBounds | SingleRowBounds | SingleColumnBounds | DayTimelineVerticalBounds;
     if (layoutMode === 'dayTimeline') {
       const layouter = dayLayouterRef.current;
       setAxisRows(layouter.getAxisRows());
@@ -584,10 +598,19 @@ function App() {
       setAxisRows([]);
       setAxisColumns(layouter.getAxisColumns());
       bounds = layouter.getContentBounds();
+    } else if (layoutMode === 'dayTimelineVertical') {
+      const layouter = dayVerticalLayouterRef.current;
+      setAxisRows(layouter.getAxisRows());
+      setAxisColumns([]);
+      bounds = layouter.getContentBounds();
     } else if (layoutMode === 'singleRow') {
       setAxisRows([]);
       setAxisColumns([]);
       bounds = singleRowLayouterRef.current.getContentBounds();
+    } else if (layoutMode === 'singleColumn') {
+      setAxisRows([]);
+      setAxisColumns([]);
+      bounds = singleColumnLayouterRef.current.getContentBounds();
     } else if (layoutMode === 'masonryVertical') {
       setAxisRows([]);
       setAxisColumns([]);
@@ -675,8 +698,12 @@ function App() {
           if (prev === 'dayTimeline') {
             nextMode = 'dayTimelinePortrait';
           } else if (prev === 'dayTimelinePortrait') {
+            nextMode = 'dayTimelineVertical';
+          } else if (prev === 'dayTimelineVertical') {
             nextMode = 'singleRow';
           } else if (prev === 'singleRow') {
+            nextMode = 'singleColumn';
+          } else if (prev === 'singleColumn') {
             nextMode = 'masonryVertical';
           } else if (prev === 'masonryVertical') {
             nextMode = 'masonryHorizontal';
@@ -827,6 +854,8 @@ function App() {
         isKioskMode: showGlowBorder,
         activeSentiment,
         showCompactAxis,
+        lineStartMode,
+        colorLODWithSentiment,
       });
 
       animationFrameRef.current = requestAnimationFrame(render);
@@ -843,7 +872,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, selectedArticleIndex, isLODEnabled, isKioskModeEnabled, isGlowBorderEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, showDebugPanel, showCompactAxis, isManualMode, manuallySelectedIndex]);
+  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, selectedArticleIndex, isLODEnabled, isKioskModeEnabled, isGlowBorderEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, showDebugPanel, showCompactAxis, isManualMode, manuallySelectedIndex, lineStartMode, colorLODWithSentiment]);
 
   return (
     <div className="app-container">
@@ -922,6 +951,52 @@ function App() {
             {showCompactAxis ? '(vertikale Daten)' : '(Detail blendet aus)'}
           </span>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+          <span>Bezier Start</span>
+          <button
+            onClick={() => setLineStartMode(prev => {
+              if (prev === 'card') return 'axis';
+              if (prev === 'axis') return 'axisToCard';
+              return 'card';
+            })}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              background: lineStartMode === 'axisToCard' ? '#10b981' : lineStartMode === 'axis' ? '#8b5cf6' : '#3b82f6',
+              color: '#fff',
+              fontWeight: 'bold',
+            }}
+          >
+            {lineStartMode === 'card' ? '📍 Karte' : lineStartMode === 'axis' ? '📅 Achse' : '📅↓ Achse+Karte'}
+          </button>
+          <span style={{ fontSize: '10px', opacity: 0.6 }}>
+            {lineStartMode === 'card' ? '(von Karten)' : lineStartMode === 'axis' ? '(von Datum)' : '(Bezier + Linie)'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+          <span>LOD Sentiment</span>
+          <button
+            onClick={() => setColorLODWithSentiment(prev => !prev)}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              background: colorLODWithSentiment ? '#10b981' : '#6b7280',
+              color: '#fff',
+              fontWeight: 'bold',
+            }}
+          >
+            {colorLODWithSentiment ? '🎨 AN' : '⬜ AUS'}
+          </button>
+          <span style={{ fontSize: '10px', opacity: 0.6 }}>
+            (Bilder einfärben)
+          </span>
+        </div>
 
         {/* Filters Section */}
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
@@ -994,7 +1069,9 @@ function App() {
             F8: {
               layoutMode === 'dayTimeline' ? '📅 Day Timeline (Landscape)' :
               layoutMode === 'dayTimelinePortrait' ? '📅 Day Timeline (Portrait)' :
+              layoutMode === 'dayTimelineVertical' ? '📅 Day Timeline (Vertical)' :
               layoutMode === 'singleRow' ? '➡️ Single Row' :
+              layoutMode === 'singleColumn' ? '⬇️ Single Column' :
               layoutMode === 'masonryVertical' ? '🧱 Masonry ⬇️' :
               '🧱 Masonry ➡️'
             }

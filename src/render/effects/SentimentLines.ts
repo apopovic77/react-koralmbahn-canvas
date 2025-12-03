@@ -11,6 +11,7 @@
 
 import type { LayoutNode } from 'arkturian-canvas-engine/src/layout/LayoutNode';
 import type { KoralmEvent } from '../../types/koralmbahn';
+import type { DayAxisColumn } from '../../layouts/DayTimelinePortraitLayouter';
 
 export type Sentiment = 'positive' | 'neutral' | 'negative';
 
@@ -22,6 +23,8 @@ export interface SentimentNode {
   color: string;
   label: string;
 }
+
+export type LineStartMode = 'card' | 'axis' | 'axisToCard';
 
 export interface SentimentLinesConfig {
   /** Colors for each sentiment */
@@ -46,6 +49,12 @@ export interface SentimentLinesConfig {
   nodeRadius: number;
   /** Gap between category nodes (as fraction of canvas width) */
   nodeSpacing: number;
+  /** Where lines start: 'card' = from card center, 'axis' = from above date axis, 'axisToCard' = bezier to axis point then straight line to card */
+  lineStartMode: LineStartMode;
+  /** Offset above axis for line start (only used when lineStartMode = 'axis') */
+  axisStartOffset: number;
+  /** Offset below axis where vertical line starts in 'axisToCard' mode (to avoid axis text) */
+  axisToCardStartY: number;
 }
 
 const DEFAULT_CONFIG: SentimentLinesConfig = {
@@ -64,6 +73,9 @@ const DEFAULT_CONFIG: SentimentLinesConfig = {
   categoryNodeY: 80,
   nodeRadius: 120, // 5x larger (was 24)
   nodeSpacing: 0.125, // 12.5% of canvas width between nodes (halved)
+  lineStartMode: 'axis', // 'card' = from cards, 'axis' = from above date axis
+  axisStartOffset: 25, // Y position where bezier ends (closer to axis text at ~80-90)
+  axisToCardStartY: 85, // Y position below axis where vertical line starts (axis is 80px, text ends ~90px)
 };
 
 /**
@@ -106,6 +118,7 @@ export class SentimentLinesRenderer {
 
   /**
    * Render sentiment lines and category nodes
+   * @param isVertical - If true, sentiment nodes are on the left side (for singleColumn layout)
    */
   render(
     ctx: CanvasRenderingContext2D,
@@ -115,11 +128,13 @@ export class SentimentLinesRenderer {
     viewportScale: number,
     viewportOffsetX: number,
     _viewportOffsetY: number,
+    axisColumns?: DayAxisColumn[],
+    isVertical: boolean = false,
   ): void {
     if (!this.isVisible() || nodes.length === 0) return;
 
-    // Calculate category node positions (in world space, above content)
-    const categoryNodes = this.calculateCategoryNodes(nodes, canvasWidth, viewportScale, viewportOffsetX);
+    // Calculate category node positions (in world space, above content or left of content)
+    const categoryNodes = this.calculateCategoryNodes(nodes, canvasWidth, viewportScale, viewportOffsetX, isVertical);
 
     // Count sentiments
     const counts = { positive: 0, neutral: 0, negative: 0 };
@@ -137,70 +152,112 @@ export class SentimentLinesRenderer {
     ctx.globalAlpha = this.opacity;
 
     // Draw lines from each card to its category
-    this.drawLines(ctx, nodes, categoryNodes);
+    this.drawLines(ctx, nodes, categoryNodes, axisColumns, isVertical);
 
     // Draw category nodes
-    this.drawCategoryNodes(ctx, categoryNodes, viewportScale);
+    this.drawCategoryNodes(ctx, categoryNodes, viewportScale, isVertical);
 
     ctx.restore();
   }
 
   /**
    * Calculate positions of the 3 category nodes
-   * Positioned at 25%, 50%, 75% of full content width (first to last tag)
+   * Horizontal: Positioned at 37.5%, 50%, 62.5% of content width (above content)
+   * Vertical: Positioned at 25%, 50%, 75% of content height (left of content)
    */
   private calculateCategoryNodes(
     nodes: LayoutNode<KoralmEvent>[],
     _canvasWidth: number,
     _viewportScale: number,
     _viewportOffsetX: number,
+    isVertical: boolean = false,
   ): SentimentNode[] {
-    // Find full content bounds (first tag to last tag on X axis)
-    let minX = Infinity, maxX = -Infinity, minY = Infinity;
+    // Find full content bounds
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     nodes.forEach(node => {
       const x = node.posX.value ?? 0;
       const y = node.posY.value ?? 0;
       const width = node.width.value ?? 0;
+      const height = node.height.value ?? 0;
       minX = Math.min(minX, x);
       maxX = Math.max(maxX, x + width);
       minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y + height);
     });
 
-    const contentWidth = maxX - minX;
-    const nodeY = minY - 3000; // Far above content
+    if (isVertical) {
+      // Vertical mode: nodes on the left, clustered closer together
+      const contentHeight = maxY - minY;
+      const nodeX = minX - 9800; // Much further left of content
 
-    // Position nodes at 37.5%, 50%, 62.5% of content width (closer together)
-    const pos1 = minX + contentWidth * 0.375;
-    const pos2 = minX + contentWidth * 0.50; // Center
-    const pos3 = minX + contentWidth * 0.625;
+      // Position nodes closer together (40%, 50%, 60% of content height)
+      const pos1 = minY + contentHeight * 0.40;
+      const pos2 = minY + contentHeight * 0.50; // Center
+      const pos3 = minY + contentHeight * 0.60;
 
+      return [
+        {
+          x: nodeX,
+          y: pos1,
+          sentiment: 'positive',
+          count: 0,
+          color: this.config.colors.positive,
+          label: 'Positiv',
+        },
+        {
+          x: nodeX,
+          y: pos2,
+          sentiment: 'neutral',
+          count: 0,
+          color: this.config.colors.neutral,
+          label: 'Neutral',
+        },
+        {
+          x: nodeX,
+          y: pos3,
+          sentiment: 'negative',
+          count: 0,
+          color: this.config.colors.negative,
+          label: 'Negativ',
+        },
+      ];
+    } else {
+      // Horizontal mode: nodes above content
+      const contentWidth = maxX - minX;
+      const nodeY = minY - 3000; // Far above content
 
-    return [
-      {
-        x: pos1,
-        y: nodeY,
-        sentiment: 'positive',
-        count: 0,
-        color: this.config.colors.positive,
-        label: 'Positiv',
-      },
-      {
-        x: pos2,
-        y: nodeY,
-        sentiment: 'neutral',
-        count: 0,
-        color: this.config.colors.neutral,
-        label: 'Neutral',
-      },
-      {
-        x: pos3,
-        y: nodeY,
-        sentiment: 'negative',
-        count: 0,
-        color: this.config.colors.negative,
-        label: 'Negativ',
-      },
-    ];
+      // Position nodes at 37.5%, 50%, 62.5% of content width (closer together)
+      const pos1 = minX + contentWidth * 0.375;
+      const pos2 = minX + contentWidth * 0.50; // Center
+      const pos3 = minX + contentWidth * 0.625;
+
+      return [
+        {
+          x: pos1,
+          y: nodeY,
+          sentiment: 'positive',
+          count: 0,
+          color: this.config.colors.positive,
+          label: 'Positiv',
+        },
+        {
+          x: pos2,
+          y: nodeY,
+          sentiment: 'neutral',
+          count: 0,
+          color: this.config.colors.neutral,
+          label: 'Neutral',
+        },
+        {
+          x: pos3,
+          y: nodeY,
+          sentiment: 'negative',
+          count: 0,
+          color: this.config.colors.negative,
+          label: 'Negativ',
+        },
+      ];
+    }
   }
 
   /**
@@ -210,8 +267,17 @@ export class SentimentLinesRenderer {
     ctx: CanvasRenderingContext2D,
     nodes: LayoutNode<KoralmEvent>[],
     categoryNodes: SentimentNode[],
+    axisColumns?: DayAxisColumn[],
+    isVertical: boolean = false,
   ): void {
-    const { lineWidth, colors, lineOpacities } = this.config;
+    const { lineWidth, colors, lineOpacities, lineStartMode, axisStartOffset, axisToCardStartY } = this.config;
+
+    // Build a map of node positions to their column (for axis mode)
+    const getColumnForNode = (node: LayoutNode<KoralmEvent>): DayAxisColumn | undefined => {
+      if (!axisColumns || axisColumns.length === 0) return undefined;
+      const nodeX = node.posX.value ?? 0;
+      return axisColumns.find(col => nodeX >= col.x && nodeX < col.x + col.width);
+    };
 
     nodes.forEach(node => {
       const sentiment = this.getSentiment(node.data);
@@ -222,25 +288,84 @@ export class SentimentLinesRenderer {
       const sentimentOpacity = lineOpacities[sentiment];
       if (sentimentOpacity <= 0) return;
 
-      const cardX = (node.posX.value ?? 0) + (node.width.value ?? 0) / 2;
-      const cardY = node.posY.value ?? 0;
-
-      // Control points for smooth bezier curve
-      const midY = (cardY + categoryNode.y) / 2;
-
-      ctx.beginPath();
-      ctx.moveTo(cardX, cardY);
-      ctx.bezierCurveTo(
-        cardX, midY,                    // Control point 1
-        categoryNode.x, midY,           // Control point 2
-        categoryNode.x, categoryNode.y  // End point
-      );
+      // Card position (always needed)
+      const cardX = node.posX.value ?? 0;
+      const cardY = (node.posY.value ?? 0) + (node.height.value ?? 0) / 2;
 
       ctx.strokeStyle = colors[sentiment];
       ctx.lineWidth = lineWidth;
-      // Per-sentiment opacity multiplied by visibility fade
       ctx.globalAlpha = this.opacity * sentimentOpacity;
-      ctx.stroke();
+
+      if (isVertical) {
+        // Vertical mode: horizontal bezier from card left edge to category node on left
+        const midX = (cardX + categoryNode.x) / 2;
+        ctx.beginPath();
+        ctx.moveTo(cardX, cardY);
+        ctx.bezierCurveTo(
+          midX, cardY,                    // Control point 1
+          midX, categoryNode.y,           // Control point 2
+          categoryNode.x, categoryNode.y  // End point
+        );
+        ctx.stroke();
+      } else {
+        // Horizontal mode: original logic
+        const cardCenterX = cardX + (node.width.value ?? 0) / 2;
+        const cardTopY = node.posY.value ?? 0;
+
+        // Axis point position (for axis and axisToCard modes)
+        let axisPointX = cardCenterX;
+        let axisPointY = axisStartOffset;
+
+        if (axisColumns && axisColumns.length > 0) {
+          const column = getColumnForNode(node);
+          if (column) {
+            axisPointX = column.x + column.width / 2;
+          }
+        }
+
+        if (lineStartMode === 'axisToCard') {
+          // Mode 3: Bezier from category node to axis point, then straight line to card
+          const midY = (axisPointY + categoryNode.y) / 2;
+          ctx.beginPath();
+          ctx.moveTo(categoryNode.x, categoryNode.y);
+          ctx.bezierCurveTo(
+            categoryNode.x, midY,
+            axisPointX, midY,
+            axisPointX, axisPointY
+          );
+          ctx.stroke();
+
+          // Part 2: Straight line from below axis text down to card
+          ctx.beginPath();
+          ctx.moveTo(axisPointX, axisToCardStartY);
+          ctx.lineTo(cardCenterX, cardTopY);
+          ctx.stroke();
+
+        } else if (lineStartMode === 'axis' && axisColumns && axisColumns.length > 0) {
+          // Mode 2: Bezier from axis point to category node
+          const midY = (axisPointY + categoryNode.y) / 2;
+          ctx.beginPath();
+          ctx.moveTo(axisPointX, axisPointY);
+          ctx.bezierCurveTo(
+            axisPointX, midY,
+            categoryNode.x, midY,
+            categoryNode.x, categoryNode.y
+          );
+          ctx.stroke();
+
+        } else {
+          // Mode 1 (card): Bezier from card to category node
+          const midY = (cardTopY + categoryNode.y) / 2;
+          ctx.beginPath();
+          ctx.moveTo(cardCenterX, cardTopY);
+          ctx.bezierCurveTo(
+            cardCenterX, midY,
+            categoryNode.x, midY,
+            categoryNode.x, categoryNode.y
+          );
+          ctx.stroke();
+        }
+      }
     });
 
     // Reset alpha for nodes
@@ -249,11 +374,13 @@ export class SentimentLinesRenderer {
 
   /**
    * Draw category nodes with counts
+   * @param isVertical - If true, labels are positioned left/right of circle instead of above/below
    */
   private drawCategoryNodes(
     ctx: CanvasRenderingContext2D,
     categoryNodes: SentimentNode[],
     viewportScale: number,
+    isVertical: boolean = false,
   ): void {
     const { nodeRadius } = this.config;
 
@@ -276,18 +403,33 @@ export class SentimentLinesRenderer {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Count text ABOVE the circle
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${Math.round(70 / Math.max(viewportScale, 0.1))}px "Bricolage Grotesque", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(String(node.count), node.x, node.y - nodeRadius - 30);
+      if (isVertical) {
+        // Vertical mode: Count LEFT of circle, Label RIGHT of circle
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.round(70 / Math.max(viewportScale, 0.1))}px "Bricolage Grotesque", sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(node.count), node.x - nodeRadius - 30, node.y);
 
-      // Label BELOW the circle
-      ctx.font = `${Math.round(50 / Math.max(viewportScale, 0.1))}px "Bricolage Grotesque", sans-serif`;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-      ctx.textBaseline = 'top';
-      ctx.fillText(node.label, node.x, node.y + nodeRadius + 30);
+        // Label RIGHT of the circle
+        ctx.font = `${Math.round(50 / Math.max(viewportScale, 0.1))}px "Bricolage Grotesque", sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        ctx.fillText(node.label, node.x + nodeRadius + 30, node.y);
+      } else {
+        // Horizontal mode: Count ABOVE, Label BELOW
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${Math.round(70 / Math.max(viewportScale, 0.1))}px "Bricolage Grotesque", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(String(node.count), node.x, node.y - nodeRadius - 30);
+
+        // Label BELOW the circle
+        ctx.font = `${Math.round(50 / Math.max(viewportScale, 0.1))}px "Bricolage Grotesque", sans-serif`;
+        ctx.fillStyle = '#ffffff';
+        ctx.textBaseline = 'top';
+        ctx.fillText(node.label, node.x, node.y + nodeRadius + 30);
+      }
     });
   }
 

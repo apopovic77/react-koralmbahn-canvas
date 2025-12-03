@@ -13,6 +13,12 @@ export class CanvasViewportController {
     this.configureCanvasSize();
     this.viewport = new ViewportTransform(canvas);
 
+    // Fix viewport dimensions to use CSS pixels instead of canvas pixels
+    // The ViewportTransform reads canvas.width/height which include DPR scaling,
+    // but centerOn() calculations should use CSS pixels for correct centering on mobile
+    this.viewport.viewportWidth = window.innerWidth;
+    this.viewport.viewportHeight = window.innerHeight;
+
     this.attachResizeListener();
     return this.viewport;
   }
@@ -64,6 +70,13 @@ export class CanvasViewportController {
     if (ctx) {
       ctx.scale(dpr, dpr);
     }
+
+    // Fix viewport dimensions to use CSS pixels instead of canvas pixels
+    // The viewport uses these for centerOn() calculations which should be in CSS pixels
+    if (this.viewport) {
+      this.viewport.viewportWidth = window.innerWidth;
+      this.viewport.viewportHeight = window.innerHeight;
+    }
   }
 
   private attachResizeListener(): void {
@@ -74,6 +87,9 @@ export class CanvasViewportController {
       this.configureCanvasSize();
       if (this.viewport) {
         this.viewport.updateViewportSize();
+        // Re-apply CSS pixel fix after updateViewportSize() resets to canvas pixels
+        this.viewport.viewportWidth = window.innerWidth;
+        this.viewport.viewportHeight = window.innerHeight;
       }
     };
     window.addEventListener('resize', this.resizeHandler);
