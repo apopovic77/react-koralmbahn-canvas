@@ -76,10 +76,28 @@ export class SummaryCanvasCard extends FixedSizeCanvasCard {
 
   /**
    * Render the card
+   *
+   * When LOD textOpacity is low (card is small), renders image-only mode
+   * for better performance and readability.
    */
   render(context: CardRenderContext): void {
-    const { ctx, x, y, width, height } = context;
+    const { ctx, x, y, width, height, image, lodState } = context;
     const { padding, qrCodeSize, qrCodePadding } = this.baseConfig;
+
+    // LOD: Image-only mode when card is too small for text
+    const textOpacity = lodState?.textOpacity ?? 1;
+    const isImageOnlyMode = textOpacity < 0.1;
+
+    if (isImageOnlyMode) {
+      // Render fullscreen image only (no text, no QR code)
+      this.renderCardBackground(context);
+      if (image && image.complete) {
+        this.drawImageCover(ctx, image, x, y, width, height, this.isScreenshot());
+      } else {
+        this.drawImagePlaceholder(ctx, x, y, width, height);
+      }
+      return;
+    }
 
     // Background
     this.renderCardBackground(context);

@@ -81,10 +81,17 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
 
   /**
    * Render the card
+   *
+   * When LOD textOpacity is low (card is small), renders image-only mode
+   * without gradient, text, or QR code for better performance.
    */
   render(context: CardRenderContext): void {
-    const { ctx, x, y, width, height, image } = context;
+    const { ctx, x, y, width, height, image, lodState } = context;
     const { qrCodeSize, qrCodePadding } = this.baseConfig;
+
+    // LOD: Image-only mode when card is too small for text
+    const textOpacity = lodState?.textOpacity ?? 1;
+    const isImageOnlyMode = textOpacity < 0.1;
 
     // Background (shadow + border)
     this.renderCardBackground(context);
@@ -94,6 +101,11 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
       this.drawImageCover(ctx, image, x, y, width, height, this.isScreenshot());
     } else {
       this.drawImagePlaceholder(ctx, x, y, width, height, '#1a1a1a');
+    }
+
+    // Image-only mode: skip gradient, text, and QR code
+    if (isImageOnlyMode) {
+      return;
     }
 
     // Debug ID
