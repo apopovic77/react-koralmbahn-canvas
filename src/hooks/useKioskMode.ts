@@ -125,7 +125,7 @@ export function useKioskMode({
     if (!event.x || !event.y || !event.width || !event.height) return;
 
     // Center the article card in viewport
-    const targetScale = 1.8; // Zoom in to 180%
+    const targetScale = 1.75; // Zoom in to 180%
     const centerX = event.x + event.width / 2;
     const centerY = event.y + event.height / 2;
 
@@ -181,12 +181,10 @@ export function useKioskMode({
     return Math.floor(Math.random() * events.length);
   }, [events, priorityQueue, selectedArticleIndex, kioskStrategy]);
 
-  // Check if we completed a full cycle (sequential mode)
-  const isFullCycleComplete = useCallback((): boolean => {
-    if (kioskStrategy !== 'sequential') return false;
-    // Full cycle when we've viewed all articles
-    return articlesViewedCount >= events.length;
-  }, [kioskStrategy, articlesViewedCount, events.length]);
+  // Check if we should show overview (both modes use articlesBeforeOverview)
+  const shouldShowOverviewNow = useCallback((): boolean => {
+    return articlesViewedCount >= articlesBeforeOverview;
+  }, [articlesViewedCount, articlesBeforeOverview]);
 
   const scheduleNextTransition = useCallback(() => {
     if (kioskTimerRef.current) {
@@ -208,10 +206,8 @@ export function useKioskMode({
         // Check if we have priority events (random mode only)
         const hasPriorityEvents = kioskStrategy === 'random' && priorityQueue.length > 0;
 
-        // Check if should go to overview
-        const shouldShowOverview = kioskStrategy === 'sequential'
-          ? isFullCycleComplete()
-          : (!hasPriorityEvents && articlesViewedCount >= articlesBeforeOverview);
+        // Check if should go to overview (both modes after N articles, skip if priority events)
+        const shouldShowOverview = !hasPriorityEvents && shouldShowOverviewNow();
 
         if (shouldShowOverview) {
           // Return to overview
@@ -231,12 +227,10 @@ export function useKioskMode({
     kioskMode,
     kioskStrategy,
     priorityQueue.length,
-    articlesViewedCount,
-    articlesBeforeOverview,
     overviewDuration,
     articleDuration,
     getNextArticleIndex,
-    isFullCycleComplete,
+    shouldShowOverviewNow,
     zoomToOverview,
     zoomToArticle,
   ]);

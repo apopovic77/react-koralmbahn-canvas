@@ -67,6 +67,9 @@ export interface DayTimelinePortraitConfig {
 
   /** Left margin before first column */
   marginLeft: number;
+
+  /** Minimum articles per column (merge single-item columns) */
+  minArticlesPerColumn: number;
 }
 
 const DEFAULT_CONFIG: DayTimelinePortraitConfig = {
@@ -77,6 +80,7 @@ const DEFAULT_CONFIG: DayTimelinePortraitConfig = {
   cardWidth: 300,
   cardHeight: 486, // Golden ratio portrait (1:1.618): 300 * 1.618 = 486
   marginLeft: 24,
+  minArticlesPerColumn: 2, // Merge single-item columns into next column
 };
 
 type DayGroup = {
@@ -144,6 +148,46 @@ export class DayTimelinePortraitLayouter implements ILayouter<KoralmEvent> {
     // Sort groups by date (oldest first = leftmost, newest = rightmost)
     const orderedGroups = Array.from(groups.values()).sort((a, b) => a.sortValue - b.sortValue);
 
+    // PASS 2: Merge columns with fewer than minArticlesPerColumn into next column
+    // Only run if minArticlesPerColumn > 1 (F12 toggle: ON = 2, OFF = 1)
+    const minPerCol = this.config.minArticlesPerColumn;
+    if (minPerCol > 1) {
+      let hasChanges = true;
+      while (hasChanges) {
+        hasChanges = false;
+
+        for (let i = 0; i < orderedGroups.length - 1; i++) {
+          const currentGroup = orderedGroups[i];
+
+          // Skip already emptied groups
+          if (currentGroup.nodes.length === 0) continue;
+
+          // If this column has fewer than min articles, merge into the next non-empty (newer) column
+          if (currentGroup.nodes.length < minPerCol) {
+            // Find next non-empty group (going towards newer)
+            let nextGroupIndex = i + 1;
+            while (nextGroupIndex < orderedGroups.length && orderedGroups[nextGroupIndex].nodes.length === 0) {
+              nextGroupIndex++;
+            }
+
+            if (nextGroupIndex < orderedGroups.length) {
+              const nextGroup = orderedGroups[nextGroupIndex];
+
+              // Move the nodes to the next group
+              nextGroup.nodes.push(...currentGroup.nodes);
+
+              // Mark for removal
+              currentGroup.nodes = [];
+              hasChanges = true;
+            }
+          }
+        }
+      }
+    }
+
+    // Filter out empty groups (merged ones)
+    const mergedGroups = orderedGroups.filter(g => g.nodes.length > 0);
+
     const columns: DayAxisColumn[] = [];
     let currentX = this.config.marginLeft;
     let maxContentHeight = 0;
@@ -151,7 +195,7 @@ export class DayTimelinePortraitLayouter implements ILayouter<KoralmEvent> {
     // Calculate the column width (card width)
     const columnWidth = this.config.cardWidth;
 
-    orderedGroups.forEach((group, index) => {
+    mergedGroups.forEach((group, index) => {
       // Sort nodes within group by time (newest first = bottom, so oldest at top)
       group.nodes.sort((a, b) => {
         const aTime = a.data.publishedAt ? new Date(a.data.publishedAt).getTime() : 0;

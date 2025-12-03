@@ -29,7 +29,6 @@ class ImageCacheService {
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('[ImageCache] IndexedDB initialized');
         resolve();
       };
 
@@ -39,7 +38,6 @@ class ImageCacheService {
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           const store = db.createObjectStore(STORE_NAME, { keyPath: 'url' });
           store.createIndex('timestamp', 'timestamp', { unique: false });
-          console.log('[ImageCache] Object store created');
         }
       };
     });
@@ -183,7 +181,6 @@ class ImageCacheService {
       const request = store.clear();
 
       request.onsuccess = () => {
-        console.log('[ImageCache] Cache cleared');
         resolve();
       };
 

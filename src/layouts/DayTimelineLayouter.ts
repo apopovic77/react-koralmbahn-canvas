@@ -88,6 +88,7 @@ export class DayTimelineLayouter implements ILayouter<KoralmEvent> {
       return;
     }
 
+    // PASS 1: Build initial day groups
     const groups = new Map<string, DayGroup>();
 
     nodes.forEach((node) => {
@@ -101,13 +102,56 @@ export class DayTimelineLayouter implements ILayouter<KoralmEvent> {
       }
     });
 
+    // Sort: newest first (index 0 = newest, last = oldest)
     const orderedGroups = Array.from(groups.values()).sort((a, b) => b.sortValue - a.sortValue);
+
+    // PASS 2: Merge single-item columns until all have at least 2
+    // Keep merging until no single-item groups remain (except possibly the last one)
+    let hasChanges = true;
+    while (hasChanges) {
+      hasChanges = false;
+
+      // Iterate from end (oldest) to start (newest)
+      for (let i = orderedGroups.length - 1; i > 0; i--) {
+        const currentGroup = orderedGroups[i];
+
+        // Skip already emptied groups
+        if (currentGroup.nodes.length === 0) continue;
+
+        // If this column has only 1 article, merge into the next non-empty (newer) column
+        if (currentGroup.nodes.length === 1) {
+          // Find next non-empty group (going towards newer)
+          let nextGroupIndex = i - 1;
+          while (nextGroupIndex >= 0 && orderedGroups[nextGroupIndex].nodes.length === 0) {
+            nextGroupIndex--;
+          }
+
+          if (nextGroupIndex >= 0) {
+            const nextGroup = orderedGroups[nextGroupIndex];
+
+            // Move the single node to the next group
+            nextGroup.nodes.push(...currentGroup.nodes);
+
+            // Mark for removal
+            currentGroup.nodes = [];
+            hasChanges = true;
+
+            console.log(`[Layouter] Merged single article from ${currentGroup.label} into ${nextGroup.label}`);
+          }
+        }
+      }
+    }
+
+    // Filter out empty groups (merged ones)
+    const mergedGroups = orderedGroups.filter(g => g.nodes.length > 0);
+
+    console.log(`[Layouter] Final groups: ${mergedGroups.map(g => `${g.label}(${g.nodes.length})`).join(', ')}`);
 
     const rows: DayAxisRow[] = [];
     let currentY = 0;
     let contentWidth = this.config.axisWidth + this.config.axisPadding;
 
-    orderedGroups.forEach((group, index) => {
+    mergedGroups.forEach((group, index) => {
       rows.push({
         key: group.key,
         label: group.label,

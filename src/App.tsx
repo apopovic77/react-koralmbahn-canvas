@@ -88,7 +88,9 @@ function App() {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimelinePortrait'); // F8: Layout Mode (Default: dayTimelinePortrait)
   const [showDebugPanel, setShowDebugPanel] = useState(false); // F9: Debug Panel (Default: OFF)
   const [cardStyle, setCardStyle] = useState<CardStyle>('imageOnly'); // F10: Card Style (Default: imageOnly)
-  const [useMuseumQR, setUseMuseumQR] = useState(true); // F11: Museum QR Codes (Default: ON - show museum page instead of original article)
+  const [isGlowBorderEnabled, setIsGlowBorderEnabled] = useState(true); // F11: Glow Border on active kiosk card (Default: ON)
+  const [isMinGroupingEnabled, setIsMinGroupingEnabled] = useState(true); // F12: Min 2 per column grouping (Default: ON)
+  const [showCompactAxis, setShowCompactAxis] = useState(false); // Compact axis mode when zoomed out (Default: OFF)
   const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all'); // Sentiment filter
   const [heroImageOnly, setHeroImageOnly] = useState(false); // Only show events with hero images (not screenshots)
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -210,7 +212,7 @@ function App() {
   }, [getImage, loadHighResImage, updateLODState, isHighResEnabled]);
 
   // Manual mode hook
-  const { isManualMode, handleCanvasClick, handleCanvasRightClick, handleManualInteraction } = useManualMode({
+  const { isManualMode, manuallySelectedIndex, handleCanvasClick, handleCanvasRightClick, handleManualInteraction } = useManualMode({
     viewport: viewportRef.current,
     getLayoutNodes: () => layoutEngineRef.current.all(),
     canvasWidth: window.innerWidth,
@@ -225,7 +227,7 @@ function App() {
   };
 
   // Kiosk mode hook
-  const { kioskMode, kioskStrategy, articlesViewedCount, setKioskStrategy } = useKioskMode({
+  const { kioskMode, kioskStrategy, articlesViewedCount, selectedArticleIndex, setKioskStrategy } = useKioskMode({
     viewport: viewportRef.current,
     events: positionedEvents,
     canvasWidth: window.innerWidth,
@@ -372,7 +374,7 @@ function App() {
     loadEvents();
   }, []);
 
-  // Generate QR codes when events or useMuseumQR changes
+  // Generate QR codes when events change
   // Store QR codes in a ref to persist across re-renders and avoid race conditions
   const qrCodeMapRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
@@ -383,13 +385,11 @@ function App() {
     const firstEventHasQR = events[0]?.qrCode != null;
     const mapHasAllCodes = qrCodeMapRef.current.size === events.length;
 
-    // Only regenerate if: no QR codes yet, OR useMuseumQR changed (map will be cleared below)
     if (firstEventHasQR && mapHasAllCodes) {
       console.log(`[QR Codes] Skipping - already have ${events.length} QR codes`);
       return;
     }
 
-    // Clear map when useMuseumQR changes to force regeneration
     qrCodeMapRef.current.clear();
 
     // Determine base URL for museum article pages
@@ -398,14 +398,12 @@ function App() {
     let completedCount = 0;
     const totalCount = events.length;
 
-    console.log(`[QR Codes] Starting generation for ${totalCount} events (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
+    console.log(`[QR Codes] Starting generation for ${totalCount} events`);
 
     events.forEach(async (event) => {
       try {
-        // Choose URL based on F11 toggle
-        const qrUrl = useMuseumQR
-          ? `${baseUrl}/article/${event.id}` // Museum article page
-          : event.url; // Original article URL
+        // Always use museum article page URL
+        const qrUrl = `${baseUrl}/article/${event.id}`;
 
         // Use QRCodeFactory to generate the image (white on transparent)
         const qrImg = await QRCodeFactory.generateImage(qrUrl, {
@@ -448,7 +446,7 @@ function App() {
         completedCount++;
       }
     });
-  }, [events.length, useMuseumQR]); // Only trigger on events.length change, not events reference
+  }, [events.length]); // Only trigger on events.length change
 
   useEffect(() => {
     // Set overflow hidden for body/html when App is mounted
@@ -547,6 +545,19 @@ function App() {
     console.log(`[Layout Mode] Switched to ${layoutMode}`);
   }, [layoutMode]);
 
+  // Update portrait layouter when min grouping toggle changes (F12)
+  useEffect(() => {
+    // Recreate portrait layouter with updated config
+    dayPortraitLayouterRef.current = new DayTimelinePortraitLayouter({
+      minArticlesPerColumn: isMinGroupingEnabled ? 2 : 1,
+    });
+
+    // If currently using portrait mode, update the layout engine
+    if (layoutMode === 'dayTimelinePortrait') {
+      layoutEngineRef.current.setLayouter(dayPortraitLayouterRef.current);
+    }
+  }, [isMinGroupingEnabled, layoutMode]);
+
   useEffect(() => {
     const layoutEngine = layoutEngineRef.current;
 
@@ -607,7 +618,7 @@ function App() {
       };
     });
     setPositionedEvents(positioned);
-  }, [displayEvents, viewportSize, layoutMode, cardStyle]);
+  }, [displayEvents, viewportSize, layoutMode, cardStyle, isMinGroupingEnabled]);
 
   // F1/F2/F3 key toggles
   useEffect(() => {
@@ -703,8 +714,15 @@ function App() {
       }
       if (event.key === 'F11') {
         event.preventDefault();
-        setUseMuseumQR((prev) => {
-          console.log(`[Museum QR] ${!prev ? 'ENABLED' : 'DISABLED'} - QR codes will point to ${!prev ? 'museum article pages' : 'original articles'}`);
+        setIsGlowBorderEnabled((prev) => {
+          console.log(`[Glow Border] ${!prev ? 'ENABLED' : 'DISABLED'}`);
+          return !prev;
+        });
+      }
+      if (event.key === 'F12') {
+        event.preventDefault();
+        setIsMinGroupingEnabled((prev) => {
+          console.log(`[Min Grouping] ${!prev ? 'ENABLED (min 2 per column)' : 'DISABLED (1 per column allowed)'}`);
           return !prev;
         });
       }
@@ -774,6 +792,22 @@ function App() {
         });
       });
 
+      // Determine active card index: use manual selection if in manual mode, otherwise kiosk selection
+      const activeCardIndex = isManualMode && manuallySelectedIndex !== undefined
+        ? manuallySelectedIndex
+        : selectedArticleIndex;
+
+      // Get the sentiment of the active article (if any) for glow border color
+      const activeSentiment = activeCardIndex !== undefined && activeCardIndex >= 0 && activeCardIndex < positionedEvents.length
+        ? positionedEvents[activeCardIndex]?.sentiment ?? 0
+        : 0;
+
+      // Show glow border if enabled AND (kiosk mode showing article OR manual mode with selection)
+      const showGlowBorder = isGlowBorderEnabled && (
+        (isKioskModeEnabled && kioskMode === 'article' && !isManualMode) ||
+        (isManualMode && manuallySelectedIndex !== undefined)
+      );
+
       renderer.renderFrame({
         ctx,
         viewport,
@@ -787,6 +821,10 @@ function App() {
         layoutMode,
         eventMap: eventMapForRender,
         showDebug: showDebugPanel,
+        activeCardIndex,
+        isKioskMode: showGlowBorder,
+        activeSentiment,
+        showCompactAxis,
       });
 
       animationFrameRef.current = requestAnimationFrame(render);
@@ -803,7 +841,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, showDebugPanel]);
+  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, selectedArticleIndex, isLODEnabled, isKioskModeEnabled, isGlowBorderEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, showDebugPanel, showCompactAxis, isManualMode, manuallySelectedIndex]);
 
   return (
     <div className="app-container">
@@ -854,7 +892,34 @@ function App() {
         <div>F4: High-Res {isHighResEnabled ? '✅' : '❌'}</div>
         <div>F6: SciFi Dashboard {showSciFiDashboard ? '✅' : '❌'}</div>
         <div>F10: Card Style 🎨 {cardStyle}</div>
-        <div>F11: Museum QR {useMuseumQR ? '✅' : '❌'}</div>
+        <div>F11: Glow Border {isGlowBorderEnabled ? '✅' : '❌'}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+          <span>F12: Min 2/Spalte</span>
+          <input
+            type="checkbox"
+            checked={isMinGroupingEnabled}
+            onChange={(e) => {
+              setIsMinGroupingEnabled(e.target.checked);
+              console.log(`[Min Grouping] ${e.target.checked ? 'ENABLED (min 2 per column)' : 'DISABLED (1 per column allowed)'}`);
+            }}
+            style={{ cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: '10px', opacity: 0.6 }}>
+            {isMinGroupingEnabled ? '(einzelne → nächste)' : '(1 pro Tag OK)'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+          <span>Compact Achse (LOD)</span>
+          <input
+            type="checkbox"
+            checked={showCompactAxis}
+            onChange={(e) => setShowCompactAxis(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          <span style={{ fontSize: '10px', opacity: 0.6 }}>
+            {showCompactAxis ? '(vertikale Daten)' : '(Detail blendet aus)'}
+          </span>
+        </div>
 
         {/* Filters Section */}
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>

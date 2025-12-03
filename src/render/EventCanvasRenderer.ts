@@ -24,6 +24,12 @@ import {
   type CardStyleType,
 } from './cards';
 
+// Import glow border effect
+import { GlowBorder } from './effects/GlowBorder';
+
+// Import sentiment lines effect
+import { SentimentLinesRenderer } from './effects/SentimentLines';
+
 export interface EventCanvasRendererOptions {
   padding: number;
   imageLODThreshold: number;
@@ -51,12 +57,25 @@ interface RenderFrameParams {
   eventMap?: Map<string, KoralmEvent>;
   /** Show debug info on cards (synced with F9 debug panel) */
   showDebug?: boolean;
+  /** Index of currently active kiosk card (for glow border) */
+  activeCardIndex?: number;
+  /** Whether kiosk mode is active */
+  isKioskMode?: boolean;
+  /** Sentiment of the active article (-1 to +1) for glow border color */
+  activeSentiment?: number | null;
+  /** Whether to show compact axis mode when zoomed out (default: true) */
+  showCompactAxis?: boolean;
+  /** Always show sentiment lines regardless of zoom level (default: true) */
+  alwaysShowSentimentLines?: boolean;
 }
 
 export class EventCanvasRenderer {
   private readonly options: EventCanvasRendererOptions;
   private highResInFlight = new Set<string>();
   private cardFactory: CardFactory;
+  private glowBorder: GlowBorder;
+  private sentimentLines: SentimentLinesRenderer;
+  private lastFrameTime: number = 0;
 
   constructor(options: EventCanvasRendererOptions) {
     this.options = options;
@@ -69,6 +88,20 @@ export class EventCanvasRenderer {
         padding: options.padding,
       },
     });
+
+    // Initialize glow border effect for active kiosk card
+    this.glowBorder = new GlowBorder({
+      color: 'rgba(255, 255, 255, 0.95)',
+      secondaryColor: 'rgba(100, 180, 255, 0.6)',
+      width: 3,
+      trailLength: 0.45,
+      blur: 18,
+      speed: 0.15,
+      borderRadius: 5,
+    });
+
+    // Initialize sentiment lines renderer
+    this.sentimentLines = new SentimentLinesRenderer();
   }
 
   /**
@@ -125,6 +158,11 @@ export class EventCanvasRenderer {
       layoutMode,
       eventMap,
       showDebug,
+      activeCardIndex,
+      isKioskMode,
+      activeSentiment,
+      showCompactAxis = true,
+      alwaysShowSentimentLines = false,
     } = params;
 
     const currentScale = viewport.scale;
@@ -142,12 +180,35 @@ export class EventCanvasRenderer {
 
     // Render axis only in dayTimelinePortrait mode (portrait - horizontal axis at bottom)
     if (layoutMode === 'dayTimelinePortrait' && axisColumns) {
-      this.drawPortraitAxis(ctx, axisColumns, bounds, currentScale);
+      this.drawPortraitAxis(ctx, axisColumns, bounds, currentScale, showCompactAxis);
     }
 
     // Render date headers in singleRow mode
     if (layoutMode === 'singleRow') {
       this.drawSingleRowDateHeaders(ctx, nodes);
+    }
+
+    // Calculate delta time for animations
+    const now = performance.now();
+    const deltaTime = this.lastFrameTime > 0 ? now - this.lastFrameTime : 16;
+    this.lastFrameTime = now;
+
+    // Update and render sentiment lines
+    // If alwaysShowSentimentLines is true, always show them
+    // Otherwise, only show when zoomed out (LOD mode, scale < 0.4)
+    const showSentimentLines = alwaysShowSentimentLines || (isLODEnabled && currentScale < 0.4);
+    this.sentimentLines.updateVisibility(showSentimentLines, deltaTime);
+
+    if (this.sentimentLines.isVisible()) {
+      this.sentimentLines.render(
+        ctx,
+        nodes,
+        ctx.canvas.width,
+        ctx.canvas.height,
+        currentScale,
+        viewport.offset.x,
+        viewport.offset.y,
+      );
     }
 
     this.drawEvents(ctx, {
@@ -159,6 +220,9 @@ export class EventCanvasRenderer {
       viewport,
       eventMap,
       showDebug,
+      activeCardIndex,
+      isKioskMode,
+      activeSentiment,
     });
 
     ctx.restore();
@@ -212,6 +276,7 @@ export class EventCanvasRenderer {
     axisColumns: DayAxisColumn[],
     _bounds: DayTimelineBounds | DayTimelinePortraitBounds | null,
     currentScale: number,
+    showCompactAxis: boolean = true,
   ): void {
     ctx.save(); // Save context state to prevent text alignment leaking to cards
 
@@ -244,8 +309,8 @@ export class EventCanvasRenderer {
         ? `${keyParts[2]}.${keyParts[1]}.${keyParts[0].slice(2)}` // "13.04.25"
         : col.label;
 
-      // Draw compact mode (vertical date) with fade
-      if (compactOpacity > 0) {
+      // Draw compact mode (vertical date) with fade - only if showCompactAxis is true
+      if (showCompactAxis && compactOpacity > 0) {
         ctx.save();
         ctx.globalAlpha = compactOpacity;
 
@@ -273,17 +338,17 @@ export class EventCanvasRenderer {
         ctx.save();
         ctx.globalAlpha = detailOpacity;
 
-        // Date label (centered horizontally in column)
+        // Date label (centered horizontally in column) - font size doubled
         ctx.fillStyle = '#e2e8f0';
-        ctx.font = 'bold 16px "Bricolage Grotesque", sans-serif';
+        ctx.font = 'bold 32px "Bricolage Grotesque", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(col.label.toUpperCase(), col.x + col.width / 2, axisY + 25);
+        ctx.fillText(col.label.toUpperCase(), col.x + col.width / 2, axisY + 40);
 
-        // Article count
+        // Article count - font size doubled, positioned lower
         ctx.fillStyle = '#94a3b8';
-        ctx.font = '12px "Bricolage Grotesque", sans-serif';
-        ctx.fillText(`${col.eventCount} Artikel`, col.x + col.width / 2, axisY + 50);
+        ctx.font = '24px "Bricolage Grotesque", sans-serif';
+        ctx.fillText(`${col.eventCount} Artikel`, col.x + col.width / 2, axisY + 75);
 
         ctx.restore();
       }
@@ -341,9 +406,15 @@ export class EventCanvasRenderer {
       viewport: ViewportTransform;
       eventMap?: Map<string, KoralmEvent>;
       showDebug?: boolean;
+      activeCardIndex?: number;
+      isKioskMode?: boolean;
+      activeSentiment?: number | null;
     },
   ): void {
-    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport, eventMap, showDebug } = params;
+    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport, eventMap, showDebug, activeCardIndex, isKioskMode, activeSentiment } = params;
+
+    // Update glow border animation
+    this.glowBorder.updateWithTime(performance.now());
 
     const devicePixelRatio = window.devicePixelRatio || 1;
     const cssWidth = ctx.canvas.width / devicePixelRatio;
@@ -421,6 +492,39 @@ export class EventCanvasRenderer {
       // Use new card system for rendering
       this.renderCard(ctx, event, x, y, width, height, img, lodState, showDebug, currentScale);
     });
+
+    // Draw glow border around active kiosk card (after all cards so it's on top)
+    if (isKioskMode && activeCardIndex !== undefined && activeCardIndex >= 0 && activeCardIndex < nodes.length) {
+      const activeNode = nodes[activeCardIndex];
+      const x = activeNode.posX.value ?? 0;
+      const y = activeNode.posY.value ?? 0;
+      const width = activeNode.width.value ?? 0;
+      const height = activeNode.height.value ?? 0;
+
+      if (width && height) {
+        // Set glow color based on sentiment: cyan (positive), yellow (neutral), magenta (negative)
+        const sentiment = activeSentiment ?? 0;
+        let glowColor: string;
+        let glowSecondary: string;
+
+        if (sentiment > 0.3) {
+          // Positive: Cyan
+          glowColor = 'rgba(0, 255, 255, 0.95)';
+          glowSecondary = 'rgba(0, 200, 255, 0.6)';
+        } else if (sentiment < -0.3) {
+          // Negative: Magenta
+          glowColor = 'rgba(255, 0, 255, 0.95)';
+          glowSecondary = 'rgba(255, 100, 255, 0.6)';
+        } else {
+          // Neutral: Yellow
+          glowColor = 'rgba(255, 255, 0, 0.95)';
+          glowSecondary = 'rgba(255, 220, 100, 0.6)';
+        }
+
+        this.glowBorder.setConfig({ color: glowColor, secondaryColor: glowSecondary });
+        this.glowBorder.render(ctx, x, y, width, height, 5);
+      }
+    }
   }
 
   /**

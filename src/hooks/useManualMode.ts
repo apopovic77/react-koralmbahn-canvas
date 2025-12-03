@@ -17,6 +17,7 @@ interface UseManualModeOptions {
 
 interface UseManualModeReturn {
   isManualMode: boolean;
+  manuallySelectedIndex: number | undefined;
   handleCanvasClick: (event: React.MouseEvent<HTMLCanvasElement>) => void;
   handleCanvasRightClick: (event: React.MouseEvent<HTMLCanvasElement>) => void;
   handleManualInteraction: () => void;
@@ -37,6 +38,7 @@ export function useManualMode({
   isKioskModeEnabled = true,
 }: UseManualModeOptions): UseManualModeReturn {
   const [isManualMode, setIsManualMode] = useState(false);
+  const [manuallySelectedIndex, setManuallySelectedIndex] = useState<number | undefined>(undefined);
   const inactivityTimerRef = useRef<number | null>(null);
 
   // Auto-exit manual mode when kiosk mode is re-enabled via F3
@@ -44,6 +46,7 @@ export function useManualMode({
     if (isKioskModeEnabled && isManualMode) {
       console.log('[ManualMode] Kiosk mode re-enabled - exiting manual mode');
       setIsManualMode(false);
+      setManuallySelectedIndex(undefined);
       if (inactivityTimerRef.current !== null) {
         window.clearTimeout(inactivityTimerRef.current);
       }
@@ -60,6 +63,7 @@ export function useManualMode({
     inactivityTimerRef.current = window.setTimeout(() => {
       console.log('[ManualMode] Inactivity timeout - returning to auto mode');
       setIsManualMode(false);
+      setManuallySelectedIndex(undefined);
     }, inactivityTimeout);
   };
 
@@ -101,28 +105,34 @@ export function useManualMode({
     console.log(`[ManualMode] Click at canvas (${canvasX.toFixed(0)}, ${canvasY.toFixed(0)}) -> world (${worldX.toFixed(0)}, ${worldY.toFixed(0)})`);
     console.log(`[ManualMode] Checking ${nodes.length} nodes for hit...`);
 
-    // Find clicked node
-    const clickedNode = nodes.find((node) => {
+    // Find clicked node and its index
+    let clickedNodeIndex = -1;
+    const clickedNode = nodes.find((node, index) => {
       const x = node.posX.value ?? 0;
       const y = node.posY.value ?? 0;
       const width = node.width.value ?? 0;
       const height = node.height.value ?? 0;
 
       if (!width || !height) return false;
-      return (
+      const isHit = (
         worldX >= x &&
         worldX <= x + width &&
         worldY >= y &&
         worldY <= y + height
       );
+      if (isHit) {
+        clickedNodeIndex = index;
+      }
+      return isHit;
     });
 
-    if (clickedNode) {
+    if (clickedNode && clickedNodeIndex >= 0) {
       const clickedEvent = clickedNode.data;
-      console.log(`[ManualMode] Left-click: Zoom to event: ${clickedEvent.title}`);
+      console.log(`[ManualMode] Left-click: Zoom to event [${clickedNodeIndex}]: ${clickedEvent.title}`);
 
-      // Switch to manual mode
+      // Switch to manual mode and track selected index
       setIsManualMode(true);
+      setManuallySelectedIndex(clickedNodeIndex);
 
       // Notify parent (to stop kiosk timer)
       if (onManualModeStart) {
@@ -233,6 +243,7 @@ export function useManualMode({
 
   return {
     isManualMode,
+    manuallySelectedIndex,
     handleCanvasClick,
     handleCanvasRightClick,
     handleManualInteraction,
