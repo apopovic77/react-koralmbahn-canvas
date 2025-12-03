@@ -238,9 +238,11 @@ export class EventCanvasRenderer {
 
       if (isCompactMode) {
         // Compact mode: Vertical rotated full date (DD.MM.YY)
-        // Extract date from label (e.g., "MO 07.11." -> "07.11.25")
-        const dateMatch = col.label.match(/(\d{2})\.(\d{2})\./);
-        const fullDate = dateMatch ? `${dateMatch[1]}.${dateMatch[2]}.25` : col.label;
+        // Use key (ISO format: 2025-04-13) to build compact date
+        const keyParts = col.key.split('-'); // ["2025", "04", "13"]
+        const fullDate = keyParts.length === 3
+          ? `${keyParts[2]}.${keyParts[1]}.${keyParts[0].slice(2)}` // "13.04.25"
+          : col.label;
 
         ctx.save();
 
