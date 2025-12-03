@@ -40,6 +40,12 @@ export interface OverlayCardConfig {
   /** Subtitle text color */
   subtitleColor: string;
 
+  /** Source label text color */
+  sourceColor: string;
+
+  /** Source label font size */
+  sourceFontSize: number;
+
   /** Maximum lines for title, default 2 */
   titleMaxLines: number;
 
@@ -51,15 +57,21 @@ export interface OverlayCardConfig {
 
   /** Maximum lines for summary if shown */
   summaryMaxLines: number;
+
+  /** Show source label above title */
+  showSource: boolean;
 }
 
 const DEFAULT_OVERLAY_CARD_CONFIG: OverlayCardConfig = {
   ...DEFAULT_OVERLAY_CONFIG,
   subtitleColor: 'rgba(255, 255, 255, 0.7)',
+  sourceColor: 'rgba(255, 255, 255, 0.6)',
+  sourceFontSize: 9,
   titleMaxLines: 2,
   subtitleMaxLines: 1,
   showSummary: false,
   summaryMaxLines: 2,
+  showSource: true,
 };
 
 /**
@@ -203,8 +215,8 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
       bottomY = summaryY - 6;
     }
 
-    // Subtitle
-    const subtitle = this.event.subtitle || this.event.sourceName;
+    // Subtitle (only if explicitly set, not sourceName fallback)
+    const subtitle = this.event.subtitle;
     if (subtitle) {
       const subtitleHeight = this.overlayConfig.subtitleMaxLines * (this.typography.subtitleFontSize + 2);
       const subtitleY = bottomY - subtitleHeight;
@@ -241,5 +253,14 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
       this.overlayConfig.titleMaxLines,
       this.typography.titleLineHeight,
     );
+
+    // Source label (above title)
+    if (this.overlayConfig.showSource && this.event.sourceName) {
+      const sourceY = titleY - this.overlayConfig.sourceFontSize - 4;
+
+      ctx.fillStyle = this.overlayConfig.sourceColor;
+      ctx.font = `${this.overlayConfig.sourceFontSize}px ${this.typography.fontFamily}`;
+      ctx.fillText(this.event.sourceName, textX, sourceY);
+    }
   }
 }
