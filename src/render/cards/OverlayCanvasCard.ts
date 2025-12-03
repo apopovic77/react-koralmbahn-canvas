@@ -65,10 +65,10 @@ export interface OverlayCardConfig {
 const DEFAULT_OVERLAY_CARD_CONFIG: OverlayCardConfig = {
   ...DEFAULT_OVERLAY_CONFIG,
   subtitleColor: 'rgba(255, 255, 255, 0.7)',
-  sourceColor: 'rgba(255, 255, 255, 0.6)',
-  sourceFontSize: 9,
-  titleMaxLines: 2,
-  subtitleMaxLines: 1,
+  sourceColor: '#ffffff',
+  sourceFontSize: 10,
+  titleMaxLines: 4, // Allow up to 4 lines, grows upward
+  subtitleMaxLines: 3,
   showSummary: false,
   summaryMaxLines: 2,
   showSource: true,
@@ -99,24 +99,14 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
    * gradient fade in smoothly when transitioning back to detail mode.
    */
   render(context: CardRenderContext): void {
-    const { ctx, x, y, width, height, image, lodState } = context;
+    const { ctx, x, y, width, height, image, lodState, scale = 1 } = context;
     const { qrCodeSize, qrCodePadding } = this.baseConfig;
 
-    // Debug: Log event data for first few events (only once per second to reduce spam)
-    const now = Date.now();
-    const debugKey = `overlay_debug_${this.event.id}`;
-    const lastLog = (window as any)[debugKey] || 0;
-    if (this.event.id && parseInt(this.event.id) < 3 && now - lastLog > 1000) {
-      (window as any)[debugKey] = now;
-      console.log(`[Overlay Debug] Event ${this.event.id}:`, {
-        sourceName: this.event.sourceName,
-        qrCode: this.event.qrCode ? 'present' : 'null',
-        qrCodeComplete: this.event.qrCode?.complete,
-        textOpacity: lodState?.textOpacity,
-        isImageOnlyMode: (lodState?.textOpacity ?? 1) < 0.1,
-        showQRCode: this.baseConfig.showQRCode,
-      });
-    }
+    // Store screen size for LOD decisions (e.g., borderRadius)
+    this.currentScreenSize = {
+      width: width * scale,
+      height: height * scale,
+    };
 
     // LOD: Image-only mode when card is too small for text
     const textOpacity = lodState?.textOpacity ?? 1;
@@ -144,8 +134,13 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
       ctx.globalAlpha = textOpacity;
     }
 
-    // Debug ID
-    this.drawDebugId(ctx, x, y);
+    // Debug ID (only when F9 debug panel is visible)
+    if (context.showDebug) {
+      this.drawDebugId(ctx, x, y);
+    }
+
+    // Published date (top left)
+    this.drawPublishedDate(ctx, x, y);
 
     // Gradient overlay
     this.drawGradientOverlay(ctx, x, y, width, height);
@@ -153,10 +148,12 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
     // Text content
     this.drawOverlayText(ctx, x, y, width, height);
 
-    // QR Code (bottom-right)
+    // QR Code (bottom right, aligned with source label)
     if (this.baseConfig.showQRCode) {
-      const qrX = x + width - qrCodeSize - qrCodePadding;
-      const qrY = y + height - qrCodeSize - qrCodePadding;
+      const { padding } = this.baseConfig;
+      const textPadding = padding * 1.5;
+      const qrX = x + width - qrCodeSize - textPadding;
+      const qrY = y + height - textPadding - qrCodeSize + 4; // Same bottomOffset as source (0)
       this.drawQRCode(ctx, qrX, qrY, qrCodeSize);
     }
 
@@ -168,6 +165,7 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
 
   /**
    * Draw gradient overlay at bottom of card
+   * Respects borderRadius for rounded corners at bottom
    */
   private drawGradientOverlay(
     ctx: CanvasRenderingContext2D,
@@ -183,12 +181,50 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
     gradient.addColorStop(0, this.overlayConfig.gradientStartColor);
     gradient.addColorStop(1, this.overlayConfig.gradientEndColor);
 
+    const borderRadius = this.getEffectiveBorderRadius();
+
+    ctx.save();
     ctx.fillStyle = gradient;
+
+    if (borderRadius > 0) {
+      // Clip to card shape so gradient respects rounded corners
+      this.createRoundedRectPath(ctx, x, y, width, height, borderRadius);
+      ctx.clip();
+    }
+
     ctx.fillRect(x, gradientY, width, gradientHeight);
+    ctx.restore();
+  }
+
+  /**
+   * Calculate the title Y position (needed for QR code alignment)
+   * Uses fixed positioning to match drawOverlayText
+   */
+  private calculateTitleY(y: number, height: number): number {
+    const { padding } = this.baseConfig;
+    const textPadding = padding * 1.5;
+
+    // Large title font (2x normal size) - must match drawOverlayText
+    const largeTitleLineHeight = this.typography.titleLineHeight * 2;
+
+    // Fixed layout heights - must match drawOverlayText (3 lines for subtitle)
+    const sourceHeight = this.overlayConfig.sourceFontSize + 4;
+    const subtitleMaxHeight = 3 * (this.typography.subtitleFontSize + 2) + 4;
+    const titleHeight = this.overlayConfig.titleMaxLines * largeTitleLineHeight;
+
+    // Calculate fixed positions from bottom - same as drawOverlayText
+    const bottomOffset = 0;
+    const sourceY = y + height - textPadding - bottomOffset;
+    const subtitleY = sourceY - sourceHeight - subtitleMaxHeight + 1;
+    const titleY = subtitleY + 5;
+
+    return titleY - titleHeight;
   }
 
   /**
    * Draw text content over the gradient
+   * Layout (bottom to top): Source → Subtitle → Title
+   * Title always starts at fixed Y position for consistent card appearance
    */
   private drawOverlayText(
     ctx: CanvasRenderingContext2D,
@@ -199,44 +235,41 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
   ): void {
     const { padding, qrCodeSize, qrCodePadding, showQRCode } = this.baseConfig;
 
-    // Calculate text area (from bottom up)
+    // Calculate text area - equal margins left and right
     const textPadding = padding * 1.5;
     const textX = x + textPadding;
-    const textWidth = showQRCode
+    const textWidth = width - textPadding * 2; // Same margin on both sides
+
+    // Reduced width for source/subtitle (QR code is at bottom right)
+    const textWidthWithQR = showQRCode
       ? width - textPadding * 2 - qrCodeSize - qrCodePadding
-      : width - textPadding * 2;
+      : textWidth;
 
-    // Start from bottom and work up
-    let bottomY = y + height - textPadding;
+    // Large title font (2x normal size)
+    const largeTitleFontSize = this.typography.titleFontSize * 2;
+    const largeTitleLineHeight = this.typography.titleLineHeight * 2;
 
-    // Summary (if enabled, from bottom)
-    if (this.overlayConfig.showSummary && this.event.summary) {
-      const summaryHeight = this.overlayConfig.summaryMaxLines * (this.typography.summaryFontSize + 2);
-      const summaryY = bottomY - summaryHeight;
+    // Fixed layout heights for consistent positioning (3 lines for subtitle)
+    const sourceHeight = this.overlayConfig.sourceFontSize + 4;
+    const subtitleMaxHeight = 3 * (this.typography.subtitleFontSize + 2) + 4; // Reduced padding
+    const titleHeight = this.overlayConfig.titleMaxLines * largeTitleLineHeight;
 
-      ctx.fillStyle = this.overlayConfig.subtitleColor;
-      ctx.font = `${this.typography.summaryFontSize}px ${this.typography.fontFamily}`;
-      this.drawMultilineText(
-        ctx,
-        this.event.summary,
-        textX,
-        summaryY,
-        textWidth,
-        this.typography.summaryFontSize,
-        this.overlayConfig.summaryMaxLines,
-        this.typography.summaryFontSize + 2,
-        true,
-      );
+    // Calculate fixed positions from bottom
+    const bottomOffset = 0; // Moved source/QR up 4px
+    const sourceY = y + height - textPadding - bottomOffset;
+    const subtitleY = sourceY - sourceHeight - subtitleMaxHeight + 1; // Moved up another 5px
+    const titleY = subtitleY + 5; // Title stays, subtitle moves up
 
-      bottomY = summaryY - 6;
+    // Source label (at bottom)
+    if (this.overlayConfig.showSource && this.event.sourceName) {
+      ctx.fillStyle = this.overlayConfig.sourceColor;
+      ctx.font = `${this.overlayConfig.sourceFontSize}px ${this.typography.fontFamily}`;
+      ctx.fillText(this.event.sourceName, textX, sourceY);
     }
 
-    // Subtitle (only if explicitly set, not sourceName fallback)
+    // Subtitle (3 lines max, above source) - uses reduced width if QR present
     const subtitle = this.event.subtitle;
     if (subtitle) {
-      const subtitleHeight = this.overlayConfig.subtitleMaxLines * (this.typography.subtitleFontSize + 2);
-      const subtitleY = bottomY - subtitleHeight;
-
       ctx.fillStyle = this.overlayConfig.subtitleColor;
       ctx.font = `${this.typography.subtitleFontSize}px ${this.typography.fontFamily}`;
       this.drawMultilineText(
@@ -244,39 +277,133 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
         subtitle,
         textX,
         subtitleY,
-        textWidth,
+        textWidthWithQR,
         this.typography.subtitleFontSize,
-        this.overlayConfig.subtitleMaxLines,
+        this.overlayConfig.subtitleMaxLines, // Use config (3 lines)
         this.typography.subtitleFontSize + 2,
       );
-
-      bottomY = subtitleY - 4;
     }
 
-    // Title
-    const titleHeight = this.overlayConfig.titleMaxLines * this.typography.titleLineHeight;
-    const titleY = bottomY - titleHeight;
-
+    // Title (large, 2x font size) - bottom-aligned, grows upward
     ctx.fillStyle = this.overlayConfig.textColor;
-    ctx.font = `${this.typography.titleFontWeight} ${this.typography.titleFontSize}px ${this.typography.fontFamily}`;
+    ctx.font = `${this.typography.titleFontWeight} ${largeTitleFontSize}px ${this.typography.fontFamily}`;
+
+    // Calculate actual lines needed for title (inline word-wrap calculation)
+    const words = this.event.title.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      if (ctx.measureText(testLine).width > textWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+
+    const actualLineCount = Math.min(lines.length, this.overlayConfig.titleMaxLines);
+    const actualTitleHeight = actualLineCount * largeTitleLineHeight;
+
+    // Title Y is fixed at bottom, text starts higher based on actual line count
+    const titleStartY = titleY - actualTitleHeight;
+
     this.drawMultilineText(
       ctx,
       this.event.title,
       textX,
-      titleY,
-      textWidth,
-      this.typography.titleFontSize,
+      titleStartY,
+      textWidth, // Full width - same margin left and right
+      largeTitleFontSize,
       this.overlayConfig.titleMaxLines,
-      this.typography.titleLineHeight,
+      largeTitleLineHeight,
     );
 
-    // Source label (above title)
-    if (this.overlayConfig.showSource && this.event.sourceName) {
-      const sourceY = titleY - this.overlayConfig.sourceFontSize - 4;
+    // Summary (if enabled, above title)
+    if (this.overlayConfig.showSummary && this.event.summary) {
+      const summaryY = titleY - titleHeight - this.typography.summaryFontSize - 8;
 
-      ctx.fillStyle = this.overlayConfig.sourceColor;
-      ctx.font = `${this.overlayConfig.sourceFontSize}px ${this.typography.fontFamily}`;
-      ctx.fillText(this.event.sourceName, textX, sourceY);
+      ctx.fillStyle = this.overlayConfig.subtitleColor;
+      ctx.font = `${this.typography.summaryFontSize}px ${this.typography.fontFamily}`;
+      this.drawMultilineText(
+        ctx,
+        this.event.summary,
+        textX,
+        summaryY - (this.overlayConfig.summaryMaxLines - 1) * (this.typography.summaryFontSize + 2),
+        textWidth,
+        this.typography.summaryFontSize,
+        this.overlayConfig.summaryMaxLines,
+        this.typography.summaryFontSize + 2,
+        true,
+      );
     }
+  }
+
+  /**
+   * Draw published date in top left corner with gradient background
+   * Respects border radius for top-left corner
+   */
+  private drawPublishedDate(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+  ): void {
+    if (!this.event.publishedAt) return;
+
+    const date = new Date(this.event.publishedAt);
+    if (Number.isNaN(date.getTime())) return;
+
+    // Format as DD.MM.YYYY
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    const dateStr = `${day}.${month}.${year}`;
+
+    const fontSize = 12;
+    const textPadding = 12;
+    const bgHeight = (fontSize + textPadding * 2) * 0.7; // 70% of original height
+    const borderRadius = this.getEffectiveBorderRadius();
+
+    ctx.save();
+
+    // Measure text width
+    ctx.font = `${fontSize}px ${this.typography.fontFamily}`;
+    const textWidth = ctx.measureText(dateStr).width;
+    const bgWidth = textWidth + textPadding * 3; // Extra space for gradient fade
+
+    // Clip to top-left corner with border radius
+    ctx.beginPath();
+    if (borderRadius > 0) {
+      ctx.moveTo(x + borderRadius, y);
+      ctx.lineTo(x + bgWidth, y);
+      ctx.lineTo(x + bgWidth, y + bgHeight);
+      ctx.lineTo(x, y + bgHeight);
+      ctx.lineTo(x, y + borderRadius);
+      ctx.arcTo(x, y, x + borderRadius, y, borderRadius);
+    } else {
+      ctx.rect(x, y, bgWidth, bgHeight);
+    }
+    ctx.closePath();
+    ctx.clip();
+
+    // Horizontal gradient from left (dark) to right (transparent)
+    const gradient = ctx.createLinearGradient(x, y, x + bgWidth, y);
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0.6)');
+    gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.4)');
+    gradient.addColorStop(0.75, 'rgba(0, 0, 0, 0.15)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    // Background rectangle
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, bgWidth, bgHeight);
+
+    // Date text (vertically centered)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    const textY = y + (bgHeight + fontSize * 0.7) / 2;
+    ctx.fillText(dateStr, x + textPadding, textY);
+
+    ctx.restore();
   }
 }

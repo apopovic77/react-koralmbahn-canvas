@@ -47,6 +47,10 @@ interface RenderFrameParams {
   isLODEnabled: boolean;
   failedImages: Set<string>;
   layoutMode: 'dayTimeline' | 'dayTimelinePortrait' | 'singleRow' | 'masonryVertical' | 'masonryHorizontal';
+  /** Optional map of current event data (with QR codes) to override stale node.data */
+  eventMap?: Map<string, KoralmEvent>;
+  /** Show debug info on cards (synced with F9 debug panel) */
+  showDebug?: boolean;
 }
 
 export class EventCanvasRenderer {
@@ -60,7 +64,7 @@ export class EventCanvasRenderer {
     // Initialize card factory with provided config or defaults
     this.cardFactory = new CardFactory(options.cardFactoryConfig || {
       aspectRatio: '4:3',
-      defaultStyle: 'summary',
+      defaultStyle: 'overlay', // Default to overlay (imageOnly) style
       baseConfig: {
         padding: options.padding,
       },
@@ -119,6 +123,8 @@ export class EventCanvasRenderer {
       isLODEnabled,
       failedImages,
       layoutMode,
+      eventMap,
+      showDebug,
     } = params;
 
     const currentScale = viewport.scale;
@@ -151,6 +157,8 @@ export class EventCanvasRenderer {
       isLODEnabled,
       failedImages,
       viewport,
+      eventMap,
+      showDebug,
     });
 
     ctx.restore();
@@ -331,9 +339,11 @@ export class EventCanvasRenderer {
       isLODEnabled: boolean;
       failedImages: Set<string>;
       viewport: ViewportTransform;
+      eventMap?: Map<string, KoralmEvent>;
+      showDebug?: boolean;
     },
   ): void {
-    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport } = params;
+    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport, eventMap, showDebug } = params;
 
     const devicePixelRatio = window.devicePixelRatio || 1;
     const cssWidth = ctx.canvas.width / devicePixelRatio;
@@ -345,7 +355,8 @@ export class EventCanvasRenderer {
     const cullMargin = 80;
 
     nodes.forEach((node) => {
-      const event = node.data;
+      // Use eventMap to get current event data (with QR codes), fallback to node.data
+      const event = eventMap?.get(node.data.id) ?? node.data;
       const x = node.posX.value ?? 0;
       const y = node.posY.value ?? 0;
       const width = node.width.value ?? 0;
@@ -408,7 +419,7 @@ export class EventCanvasRenderer {
       const img = event.imageUrl ? this.options.getImage(event.imageUrl, useHighRes) : null;
 
       // Use new card system for rendering
-      this.renderCard(ctx, event, x, y, width, height, img, lodState);
+      this.renderCard(ctx, event, x, y, width, height, img, lodState, showDebug, currentScale);
     });
   }
 
@@ -424,13 +435,20 @@ export class EventCanvasRenderer {
     height: number,
     image: HTMLImageElement | null,
     lodState: { imageHeightPercent: number; textOpacity: number },
+    showDebug?: boolean,
+    scale?: number,
   ): void {
-    // Map old cardStyle to new system, or use default
+    // Map cardStyle to card factory style
+    // imageOnly -> overlay (fullsize image with text overlay)
+    // catalog -> summary (compact with summary text)
+    // standard -> title (50/50 image/text split)
     let cardStyle: CardStyleType | undefined;
     if (event.cardStyle === 'imageOnly') {
       cardStyle = 'overlay';
     } else if (event.cardStyle === 'catalog') {
       cardStyle = 'summary';
+    } else if (event.cardStyle === 'standard') {
+      cardStyle = 'title';
     }
 
     // Create card instance
@@ -445,6 +463,8 @@ export class EventCanvasRenderer {
       height,
       image,
       lodState,
+      showDebug,
+      scale,
     });
   }
 

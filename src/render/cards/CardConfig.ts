@@ -147,7 +147,7 @@ export const DEFAULT_BASE_CONFIG: BaseCardConfig = {
   showQRCode: true,
   qrCodeSize: 40,
   qrCodePadding: 10,
-  borderRadius: 0,
+  borderRadius: 5,
   shadowBlur: 10,
   shadowColor: 'rgba(0, 0, 0, 0.1)',
   borderColor: '#e0e0e0',
@@ -159,15 +159,15 @@ export const DEFAULT_BASE_CONFIG: BaseCardConfig = {
  */
 export const DEFAULT_TYPOGRAPHY: TypographyConfig = {
   fontFamily: '"Bricolage Grotesque", sans-serif',
-  titleFontSize: 12,
+  titleFontSize: 10, // 80% of original (12 → 10), overlay uses 2x = 20px
   titleFontWeight: 'bold',
-  titleLineHeight: 14,
+  titleLineHeight: 12, // 80% of original (14 → ~11, rounded to 12)
   titleColor: '#1a1a1a',
-  subtitleFontSize: 10,
+  subtitleFontSize: 8, // 80% of original (10 → 8)
   subtitleColor: '#666666',
-  summaryFontSize: 10,
+  summaryFontSize: 8, // 80% of original (10 → 8)
   summaryColor: '#555555',
-  summaryLineHeight: 12,
+  summaryLineHeight: 10, // 80% of original (12 → ~10)
 };
 
 /**

@@ -28,9 +28,9 @@ interface UseKioskModeReturn {
 }
 
 const DEFAULT_OVERVIEW_DURATION = 10000; // 10 seconds
-const DEFAULT_ARTICLE_DURATION = 8000; // 8 seconds
-const DEFAULT_TRANSITION_SPEED = 0.00007; // ~3.5 seconds (slower = smaller value)
-const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 5;
+const DEFAULT_ARTICLE_DURATION = 10000; // 8 seconds
+const DEFAULT_TRANSITION_SPEED = 0.9; // ~7 seconds (halved = 2x slower)
+const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 8;
 
 export function useKioskMode({
   viewport,
@@ -44,7 +44,7 @@ export function useKioskMode({
   transitionSpeed = DEFAULT_TRANSITION_SPEED,
   articlesBeforeOverview = DEFAULT_ARTICLES_BEFORE_OVERVIEW,
 }: UseKioskModeOptions): UseKioskModeReturn {
-  const [kioskMode, setKioskMode] = useState<KioskMode>('overview');
+  const [kioskMode, setKioskMode] = useState<KioskMode>('article'); // Start with article, not overview
   const [selectedArticleIndex, setSelectedArticleIndex] = useState<number>(0);
   const [articlesViewedCount, setArticlesViewedCount] = useState<number>(0);
   const kioskTimerRef = useRef<number | null>(null);

@@ -373,15 +373,33 @@ function App() {
   }, []);
 
   // Generate QR codes when events or useMuseumQR changes
+  // Store QR codes in a ref to persist across re-renders and avoid race conditions
+  const qrCodeMapRef = useRef<Map<string, HTMLImageElement>>(new Map());
+
   useEffect(() => {
     if (events.length === 0) return;
+
+    // Skip if events already have QR codes (avoid regeneration on every render)
+    const firstEventHasQR = events[0]?.qrCode != null;
+    const mapHasAllCodes = qrCodeMapRef.current.size === events.length;
+
+    // Only regenerate if: no QR codes yet, OR useMuseumQR changed (map will be cleared below)
+    if (firstEventHasQR && mapHasAllCodes) {
+      console.log(`[QR Codes] Skipping - already have ${events.length} QR codes`);
+      return;
+    }
+
+    // Clear map when useMuseumQR changes to force regeneration
+    qrCodeMapRef.current.clear();
 
     // Determine base URL for museum article pages
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
-    const qrCodeMap = new Map<string, HTMLImageElement>();
     let completedCount = 0;
     const totalCount = events.length;
+    const currentEventIds = events.map(e => e.id); // Capture IDs at start
+
+    console.log(`[QR Codes] Starting generation for ${totalCount} events (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
 
     events.forEach(async (event) => {
       try {
@@ -390,25 +408,39 @@ function App() {
           ? `${baseUrl}/article/${event.id}` // Museum article page
           : event.url; // Original article URL
 
-        // Use QRCodeFactory to generate the image
+        // Use QRCodeFactory to generate the image (white on transparent)
         const qrImg = await QRCodeFactory.generateImage(qrUrl, {
           width: 80,
           margin: 1,
+          color: {
+            dark: '#ffffff',    // White QR code
+            light: '#00000000', // Transparent background
+          },
         });
 
-        qrCodeMap.set(event.id, qrImg);
+        qrCodeMapRef.current.set(event.id, qrImg);
         completedCount++;
 
         // Update events state with QR codes when all are ready
         if (completedCount === totalCount) {
-          console.log(`[QR Codes] All ${totalCount} QR codes generated (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
-          console.log(`[QR Codes] Sample QR from map:`, qrCodeMap.get(events[0]?.id));
+          console.log(`[QR Codes] All ${totalCount} QR codes generated`);
+
+          // Use functional update to get latest events state
           setEvents(prevEvents => {
+            // Only update if prevEvents has the same events we generated for
+            if (prevEvents.length === 0) {
+              console.log(`[QR Codes] Warning: prevEvents is empty, skipping update`);
+              return prevEvents;
+            }
+
             const updated = prevEvents.map(e => ({
               ...e,
-              qrCode: qrCodeMap.get(e.id) ?? e.qrCode,
+              qrCode: qrCodeMapRef.current.get(e.id) ?? e.qrCode,
             }));
-            console.log(`[QR Codes] Updated events[0].qrCode:`, updated[0]?.qrCode ? 'present' : 'null');
+
+            const assignedCount = updated.filter(e => e.qrCode != null).length;
+            console.log(`[QR Codes] Assigned QR codes to ${assignedCount}/${updated.length} events`);
+
             return updated;
           });
         }
@@ -563,9 +595,12 @@ function App() {
     const positioned = nodes.map((node) => {
       // Merge node.data with current event to get latest qrCode
       const currentEvent = eventMap.get(node.data.id);
+      // Also check qrCodeMapRef as fallback (in case events state hasn't been updated yet)
+      const qrCode = currentEvent?.qrCode ?? qrCodeMapRef.current.get(node.data.id) ?? node.data.qrCode;
       return {
         ...node.data,
         ...currentEvent, // Override with current event data (includes qrCode)
+        qrCode, // Explicit qrCode with ref fallback
         x: node.posX.value ?? 0,
         y: node.posY.value ?? 0,
         width: node.width.value ?? 0,
@@ -729,6 +764,17 @@ function App() {
       }
 
       const nodes = layoutEngineRef.current.all();
+
+      // Create eventMap from displayEvents for current event data (with QR codes)
+      // Also check qrCodeMapRef for events that haven't been updated in state yet
+      const eventMapForRender = new Map<string, typeof displayEvents[0]>();
+      displayEvents.forEach(e => {
+        eventMapForRender.set(e.id, {
+          ...e,
+          qrCode: e.qrCode ?? qrCodeMapRef.current.get(e.id),
+        });
+      });
+
       renderer.renderFrame({
         ctx,
         viewport,
@@ -740,6 +786,8 @@ function App() {
         isLODEnabled,
         failedImages: failedImagesRef.current,
         layoutMode,
+        eventMap: eventMapForRender,
+        showDebug: showDebugPanel,
       });
 
       animationFrameRef.current = requestAnimationFrame(render);
@@ -756,7 +804,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents]);
+  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, isLODEnabled, isKioskModeEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, showDebugPanel]);
 
   return (
     <div className="app-container">

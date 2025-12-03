@@ -45,6 +45,12 @@ export interface CardRenderContext {
     imageHeightPercent: number;
     textOpacity: number;
   };
+
+  /** Show debug info (ID overlay) - synced with F9 debug panel */
+  showDebug?: boolean;
+
+  /** Current viewport scale (for LOD calculations) */
+  scale?: number;
 }
 
 /**
@@ -95,8 +101,64 @@ export abstract class BaseCanvasCard {
     );
   }
 
+  /** Current card screen size for LOD decisions (set by render method) */
+  protected currentScreenSize?: { width: number; height: number };
+
+  /** Minimum screen width (px) below which rounded corners are disabled for performance */
+  private static readonly CORNER_RADIUS_MIN_WIDTH = 100;
+
   /**
-   * Draw card shadow
+   * Get effective border radius (0 when card is small on screen for performance)
+   */
+  protected getEffectiveBorderRadius(): number {
+    const { borderRadius } = this.baseConfig;
+    if (borderRadius <= 0) return 0;
+
+    // Disable rounded corners when cards are small on screen
+    const screenWidth = this.currentScreenSize?.width ?? 999;
+    if (screenWidth < BaseCanvasCard.CORNER_RADIUS_MIN_WIDTH) {
+      return 0;
+    }
+
+    return borderRadius;
+  }
+
+  /**
+   * Create a rounded rectangle path
+   * Uses native roundRect if available, falls back to manual path
+   */
+  protected createRoundedRectPath(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number,
+  ): void {
+    // Clamp radius to half the smallest dimension
+    const r = Math.min(radius, width / 2, height / 2);
+
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      // Native roundRect (modern browsers)
+      ctx.roundRect(x, y, width, height, r);
+    } else {
+      // Fallback for older browsers
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + width - r, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+      ctx.lineTo(x + width, y + height - r);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+      ctx.lineTo(x + r, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+    }
+    ctx.closePath();
+  }
+
+  /**
+   * Draw card shadow (with optional rounded corners, LOD-aware)
    */
   protected drawShadow(
     ctx: CanvasRenderingContext2D,
@@ -105,6 +167,8 @@ export abstract class BaseCanvasCard {
     width: number,
     height: number,
   ): void {
+    const borderRadius = this.getEffectiveBorderRadius();
+
     ctx.save();
     ctx.beginPath();
     ctx.rect(x - 5, y - 5, width + 10, height + 10);
@@ -115,12 +179,18 @@ export abstract class BaseCanvasCard {
     ctx.shadowBlur = this.baseConfig.shadowBlur;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 2;
-    ctx.fillRect(x, y, width, height);
+
+    if (borderRadius > 0) {
+      this.createRoundedRectPath(ctx, x, y, width, height, borderRadius);
+      ctx.fill();
+    } else {
+      ctx.fillRect(x, y, width, height);
+    }
     ctx.restore();
   }
 
   /**
-   * Draw card border
+   * Draw card border (with optional rounded corners, LOD-aware)
    */
   protected drawBorder(
     ctx: CanvasRenderingContext2D,
@@ -129,13 +199,22 @@ export abstract class BaseCanvasCard {
     width: number,
     height: number,
   ): void {
+    const borderRadius = this.getEffectiveBorderRadius();
+
     ctx.strokeStyle = this.baseConfig.borderColor;
     ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, width, height);
+
+    if (borderRadius > 0) {
+      this.createRoundedRectPath(ctx, x, y, width, height, borderRadius);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(x, y, width, height);
+    }
   }
 
   /**
    * Draw QR code at specified position
+   * Renders white QR code with transparent background (no border/shadow)
    */
   protected drawQRCode(
     ctx: CanvasRenderingContext2D,
@@ -144,31 +223,15 @@ export abstract class BaseCanvasCard {
     size: number = this.baseConfig.qrCodeSize,
   ): void {
     const { qrCode } = this.event;
-    // Debug: Log QR code status for first few events
-    if (this.event.id && parseInt(this.event.id) < 5) {
-      console.log(`[QR Debug] Event ${this.event.id}: qrCode=${qrCode ? 'present' : 'null'}, complete=${qrCode?.complete}`);
-    }
     if (!qrCode || !qrCode.complete) return;
 
-    // White background with shadow
-    ctx.save();
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
-    ctx.shadowBlur = 4;
-    ctx.fillRect(x - 2, y - 2, size + 4, size + 4);
-    ctx.restore();
-
-    // Border
-    ctx.strokeStyle = this.baseConfig.borderColor;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x - 2, y - 2, size + 4, size + 4);
-
-    // QR code image
+    // QR code image (white on transparent, no background/border)
     ctx.drawImage(qrCode, x, y, size, size);
   }
 
   /**
    * Draw image with cover mode (fills area, crops overflow)
+   * Respects borderRadius for rounded corners clipping (LOD-aware)
    *
    * @param alignTop - If true, align image to top (for screenshots). Default centers.
    */
@@ -183,10 +246,19 @@ export abstract class BaseCanvasCard {
   ): void {
     if (!img.complete) return;
 
+    const borderRadius = this.getEffectiveBorderRadius();
+
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, width, height);
-    ctx.clip();
+
+    // Clip to rounded rectangle if borderRadius is set
+    if (borderRadius > 0) {
+      this.createRoundedRectPath(ctx, x, y, width, height, borderRadius);
+      ctx.clip();
+    } else {
+      ctx.beginPath();
+      ctx.rect(x, y, width, height);
+      ctx.clip();
+    }
 
     const imgAspect = img.width / img.height;
     const targetAspect = width / height;
@@ -250,6 +322,7 @@ export abstract class BaseCanvasCard {
 
   /**
    * Draw placeholder rectangle when image is loading
+   * Respects borderRadius for rounded corners (LOD-aware)
    */
   protected drawImagePlaceholder(
     ctx: CanvasRenderingContext2D,
@@ -259,8 +332,16 @@ export abstract class BaseCanvasCard {
     height: number,
     color: string = '#e0e0e0',
   ): void {
+    const borderRadius = this.getEffectiveBorderRadius();
+
     ctx.fillStyle = color;
-    ctx.fillRect(x, y, width, height);
+
+    if (borderRadius > 0) {
+      this.createRoundedRectPath(ctx, x, y, width, height, borderRadius);
+      ctx.fill();
+    } else {
+      ctx.fillRect(x, y, width, height);
+    }
   }
 
   /**
