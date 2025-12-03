@@ -237,10 +237,10 @@ export class EventCanvasRenderer {
       const isCompactMode = screenColWidth < LOD_THRESHOLD;
 
       if (isCompactMode) {
-        // Compact mode: Vertical rotated day label only
-        // Extract day number from label (e.g., "MO 07.11." -> "07")
-        const dayMatch = col.label.match(/(\d{2})\./);
-        const dayNumber = dayMatch ? dayMatch[1] : col.label.slice(0, 2);
+        // Compact mode: Vertical rotated full date (DD.MM.YY)
+        // Extract date from label (e.g., "MO 07.11." -> "07.11.25")
+        const dateMatch = col.label.match(/(\d{2})\.(\d{2})\./);
+        const fullDate = dateMatch ? `${dateMatch[1]}.${dateMatch[2]}.25` : col.label;
 
         ctx.save();
 
@@ -255,10 +255,10 @@ export class EventCanvasRenderer {
         // Font size limited to column width (text is rotated, so width = available height)
         const fontSize = Math.min(col.width * 0.8, 200);
         ctx.fillStyle = '#e2e8f0';
-        ctx.font = `bold ${fontSize}px "Bricolage Grotesque", sans-serif`;
+        ctx.font = `300 ${fontSize}px "Bricolage Grotesque", sans-serif`; // 300 = light weight
         ctx.textAlign = 'left'; // Left = bottom after rotation
         ctx.textBaseline = 'middle';
-        ctx.fillText(dayNumber, 0, 0);
+        ctx.fillText(fullDate, 0, 0);
 
         ctx.restore();
       } else {
