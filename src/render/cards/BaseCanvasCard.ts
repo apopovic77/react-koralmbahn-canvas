@@ -144,6 +144,10 @@ export abstract class BaseCanvasCard {
     size: number = this.baseConfig.qrCodeSize,
   ): void {
     const { qrCode } = this.event;
+    // Debug: Log QR code status for first few events
+    if (this.event.id && parseInt(this.event.id) < 5) {
+      console.log(`[QR Debug] Event ${this.event.id}: qrCode=${qrCode ? 'present' : 'null'}, complete=${qrCode?.complete}`);
+    }
     if (!qrCode || !qrCode.complete) return;
 
     // White background with shadow
