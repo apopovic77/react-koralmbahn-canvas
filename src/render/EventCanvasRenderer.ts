@@ -251,8 +251,9 @@ export class EventCanvasRenderer {
         ctx.translate(centerX, centerY);
         ctx.rotate(-Math.PI / 2); // Rotate 90° counter-clockwise
 
-        // Font size limited to column width (in world space)
-        const fontSize = Math.min(col.width * 0.7, 24);
+        // Font size limited to column width (text is rotated, so width = available height)
+        // Can be larger since we have 80px axis height to work with
+        const fontSize = Math.min(col.width * 0.8, 50);
         ctx.fillStyle = '#e2e8f0';
         ctx.font = `bold ${fontSize}px "Bricolage Grotesque", sans-serif`;
         ctx.textAlign = 'center';
