@@ -315,9 +315,11 @@ function App() {
       if (distance < CLICK_THRESHOLD) {
         console.log('[ClickDetection] Detected TAP');
         // Create a synthetic event object for handleCanvasClick
+        // Include currentTarget so getBoundingClientRect works
         const syntheticEvent = {
           clientX: touch.clientX,
           clientY: touch.clientY,
+          currentTarget: event.currentTarget,
         } as React.MouseEvent<HTMLCanvasElement>;
         handleCanvasClick(syntheticEvent);
       } else {
@@ -1021,15 +1023,18 @@ function App() {
         <SciFiDashboard />
       ) : (
         <>
-          <form className="event-search" onSubmit={handleEventSearch}>
-            <input
-              ref={searchInputRef}
-              type="text"
-              name="eventId"
-              placeholder="Event ID eingeben…"
-              autoComplete="off"
-            />
-          </form>
+          {/* Event Search - only visible in debug mode (F9) */}
+          {showDebugPanel && (
+            <form className="event-search" onSubmit={handleEventSearch}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                name="eventId"
+                placeholder="Event ID eingeben…"
+                autoComplete="off"
+              />
+            </form>
+          )}
           {isLoading && (
             <div className="loader">
               <div className="spinner"></div>

@@ -34,7 +34,7 @@ interface UseKioskModeReturn {
 const DEFAULT_OVERVIEW_DURATION = 10000; // 10 seconds
 const DEFAULT_ARTICLE_DURATION = 10000; // 10 seconds
 const DEFAULT_TRANSITION_SPEED = 0.06; // speedFactor: 6% per frame
-const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 8;
+const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 5;
 
 export function useKioskMode({
   viewport,
@@ -105,12 +105,15 @@ export function useKioskMode({
     const targetScale = Math.min(scaleX, scaleY, 1) * 0.9; // 90% to add padding
 
     // Center the grid within the viewport
+    // Add vertical offset to visually center (content has axis at top, so shift down)
+    const verticalOffset = canvasHeight * 0.08; // 8% of screen height shift down
+
     // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.targetScale = targetScale;
     // @ts-expect-error - Accessing internal properties for kiosk mode
     viewport.targetOffset = {
       x: (canvasWidth - gridWidth * targetScale) / 2 - minX * targetScale,
-      y: (canvasHeight - gridHeight * targetScale) / 2 - minY * targetScale,
+      y: (canvasHeight - gridHeight * targetScale) / 2 - minY * targetScale + verticalOffset,
     };
     // Set animation speed (speedFactor: 0-1, lower = slower)
     viewport.speedFactor = transitionSpeed;
