@@ -228,6 +228,7 @@ function App() {
     canvasWidth: window.innerWidth,
     canvasHeight: window.innerHeight,
     isKioskModeEnabled,
+    is3DMode,
   });
 
   // Wrap manual interaction to also notify snap controller
@@ -533,6 +534,31 @@ function App() {
   useEffect(() => {
     viewportControllerRef.current.updateBounds(layoutBounds, positionedEvents);
   }, [layoutBounds, positionedEvents]);
+
+  // Reconfigure canvas size when 3D mode changes (canvas size changes)
+  useEffect(() => {
+    // Wait for CSS transition to complete before reconfiguring
+    const timeout = setTimeout(() => {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.scale(dpr, dpr);
+        }
+        // Update viewport dimensions
+        if (viewportRef.current) {
+          viewportRef.current.viewportWidth = rect.width;
+          viewportRef.current.viewportHeight = rect.height;
+        }
+      }
+    }, 350); // Wait for CSS transition (0.3s + buffer)
+
+    return () => clearTimeout(timeout);
+  }, [is3DMode]);
 
   // Switch layouter based on mode
   useEffect(() => {
@@ -1120,15 +1146,12 @@ function App() {
           )}
           
           {/* Scene Container to wrap Canvas and Overlay with same 3D transform */}
-          <div 
+          <div
             className="scene-wrapper"
             style={{
               display: 'block',
               width: '100vw',
               height: '100vh',
-              transform: is3DMode ? 'perspective(1200px) rotateX(8deg) rotateY(-3deg)' : 'none',
-              transformStyle: is3DMode ? 'preserve-3d' : 'flat',
-              transition: 'transform 0.3s ease-out',
               position: 'relative',
               overflow: 'hidden', // Clip anything outside
             }}
@@ -1144,17 +1167,21 @@ function App() {
               onWheel={handleUserInteraction}
               style={{
                 display: 'block',
-                width: '100vw',
-                height: '100vh',
+                // In 3D mode, make canvas larger to cover gaps from rotation
+                width: is3DMode ? '130vw' : '100vw',
+                height: is3DMode ? '130vh' : '100vh',
                 background: 'transparent',
-                // Canvas sits at 0,0
                 position: 'absolute',
-                top: 0,
-                left: 0,
+                // Center the enlarged canvas so rotation covers all corners
+                top: is3DMode ? '-15vh' : 0,
+                left: is3DMode ? '-15vw' : 0,
                 cursor: 'pointer',
+                transform: is3DMode ? 'perspective(1200px) rotateX(8deg) rotateY(-3deg)' : 'none',
+                transformOrigin: 'center center',
+                transition: 'transform 0.3s ease-out, width 0.3s ease-out, height 0.3s ease-out, top 0.3s ease-out, left 0.3s ease-out',
               }}
             />
-            
+
           </div>
         </>
       )}

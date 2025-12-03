@@ -61,10 +61,18 @@ export class CanvasViewportController {
   private configureCanvasSize(): void {
     if (!this.canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = window.innerWidth * dpr;
-    this.canvas.height = window.innerHeight * dpr;
-    this.canvas.style.width = `${window.innerWidth}px`;
-    this.canvas.style.height = `${window.innerHeight}px`;
+
+    // Use the canvas's actual CSS size (set by React styles) to determine internal resolution
+    // This allows React to control the CSS size (e.g., for 3D mode enlargement)
+    const rect = this.canvas.getBoundingClientRect();
+    const cssWidth = rect.width || window.innerWidth;
+    const cssHeight = rect.height || window.innerHeight;
+
+    this.canvas.width = cssWidth * dpr;
+    this.canvas.height = cssHeight * dpr;
+    // Don't override CSS styles - let React control them
+    // this.canvas.style.width = `${cssWidth}px`;
+    // this.canvas.style.height = `${cssHeight}px`;
 
     const ctx = this.canvas.getContext('2d');
     if (ctx) {
@@ -74,8 +82,8 @@ export class CanvasViewportController {
     // Fix viewport dimensions to use CSS pixels instead of canvas pixels
     // The viewport uses these for centerOn() calculations which should be in CSS pixels
     if (this.viewport) {
-      this.viewport.viewportWidth = window.innerWidth;
-      this.viewport.viewportHeight = window.innerHeight;
+      this.viewport.viewportWidth = cssWidth;
+      this.viewport.viewportHeight = cssHeight;
     }
   }
 
@@ -85,11 +93,12 @@ export class CanvasViewportController {
     }
     this.resizeHandler = () => {
       this.configureCanvasSize();
-      if (this.viewport) {
+      if (this.viewport && this.canvas) {
         this.viewport.updateViewportSize();
         // Re-apply CSS pixel fix after updateViewportSize() resets to canvas pixels
-        this.viewport.viewportWidth = window.innerWidth;
-        this.viewport.viewportHeight = window.innerHeight;
+        const rect = this.canvas.getBoundingClientRect();
+        this.viewport.viewportWidth = rect.width || window.innerWidth;
+        this.viewport.viewportHeight = rect.height || window.innerHeight;
       }
     };
     window.addEventListener('resize', this.resizeHandler);

@@ -13,6 +13,8 @@ interface UseManualModeOptions {
   inactivityTimeout?: number;
   transitionSpeed?: number;
   isKioskModeEnabled?: boolean;
+  /** Whether 3D mode is active (affects coordinate transformation) */
+  is3DMode?: boolean;
 }
 
 interface UseManualModeReturn {
@@ -26,6 +28,68 @@ interface UseManualModeReturn {
 const DEFAULT_INACTIVITY_TIMEOUT = 60000; // 60 seconds
 const DEFAULT_TRANSITION_SPEED = 0.002; // Faster animation for better visibility
 
+/**
+ * Transform screen coordinates to account for CSS 3D perspective transform
+ * This reverses the effect of: perspective(1200px) rotateX(8deg) rotateY(-3deg)
+ */
+function transform3DCoordinates(
+  screenX: number,
+  screenY: number,
+  canvasWidth: number,
+  canvasHeight: number,
+): { x: number; y: number } {
+  // The canvas is 130% size and offset by -15% in 3D mode
+  // We need to map the click coordinates back to the logical canvas space
+
+  // Canvas is positioned at -15vw, -15vh and is 130vw x 130vh
+  // The visible area is the center 100vw x 100vh portion
+  const scale = 1.3;
+  const offset = 0.15;
+
+  // First, adjust for the canvas being larger and offset
+  // The visible viewport (100vw x 100vh) maps to the center of the 130% canvas
+  const logicalX = screenX + (canvasWidth * offset);
+  const logicalY = screenY + (canvasHeight * offset);
+
+  // Apply inverse perspective transformation (approximate)
+  // For small rotation angles, we can use a linear approximation
+  const rotateX = 8 * Math.PI / 180; // 8 degrees in radians
+  const rotateY = -3 * Math.PI / 180; // -3 degrees in radians
+  const perspective = 1200;
+
+  // Center of the canvas (transform origin)
+  const centerX = (canvasWidth * scale) / 2;
+  const centerY = (canvasHeight * scale) / 2;
+
+  // Translate to center
+  const dx = logicalX - centerX;
+  const dy = logicalY - centerY;
+
+  // Approximate inverse rotation (for small angles)
+  // This is a simplified inverse that works reasonably well for small rotations
+  const z = 0; // Assume we're clicking on the z=0 plane
+  const factor = 1 + z / perspective;
+
+  // Apply inverse rotations (approximate)
+  const cosX = Math.cos(-rotateX);
+  const sinX = Math.sin(-rotateX);
+  const cosY = Math.cos(-rotateY);
+  const sinY = Math.sin(-rotateY);
+
+  // Inverse Y rotation
+  const x1 = dx * cosY;
+  const z1 = dx * sinY;
+
+  // Inverse X rotation
+  const y1 = dy * cosX - z1 * sinX;
+
+  // Translate back and apply perspective correction
+  const resultX = (x1 / factor) + centerX - (canvasWidth * offset);
+  const resultY = (y1 / factor) + centerY - (canvasHeight * offset);
+
+  return { x: resultX, y: resultY };
+}
+
 export function useManualMode({
   viewport,
   getLayoutNodes,
@@ -36,6 +100,7 @@ export function useManualMode({
   inactivityTimeout = DEFAULT_INACTIVITY_TIMEOUT,
   transitionSpeed: _transitionSpeed = DEFAULT_TRANSITION_SPEED,
   isKioskModeEnabled = true,
+  is3DMode = false,
 }: UseManualModeOptions): UseManualModeReturn {
   const [isManualMode, setIsManualMode] = useState(false);
   const [manuallySelectedIndex, setManuallySelectedIndex] = useState<number | undefined>(undefined);
@@ -92,8 +157,16 @@ export function useManualMode({
 
     const canvas = event.currentTarget;
     const rect = canvas.getBoundingClientRect();
-    const canvasX = event.clientX - rect.left;
-    const canvasY = event.clientY - rect.top;
+    let canvasX = event.clientX - rect.left;
+    let canvasY = event.clientY - rect.top;
+
+    // In 3D mode, transform coordinates to account for perspective
+    if (is3DMode) {
+      const transformed = transform3DCoordinates(canvasX, canvasY, canvasWidth, canvasHeight);
+      canvasX = transformed.x;
+      canvasY = transformed.y;
+      console.log(`[ManualMode] 3D transform: (${(event.clientX - rect.left).toFixed(0)}, ${(event.clientY - rect.top).toFixed(0)}) -> (${canvasX.toFixed(0)}, ${canvasY.toFixed(0)})`);
+    }
 
     // Convert canvas coordinates to world coordinates
     const worldPos = viewport.screenToWorld(canvasX, canvasY);
@@ -176,8 +249,15 @@ export function useManualMode({
 
     const canvas = event.currentTarget;
     const rect = canvas.getBoundingClientRect();
-    const canvasX = event.clientX - rect.left;
-    const canvasY = event.clientY - rect.top;
+    let canvasX = event.clientX - rect.left;
+    let canvasY = event.clientY - rect.top;
+
+    // In 3D mode, transform coordinates to account for perspective
+    if (is3DMode) {
+      const transformed = transform3DCoordinates(canvasX, canvasY, canvasWidth, canvasHeight);
+      canvasX = transformed.x;
+      canvasY = transformed.y;
+    }
 
     // Convert canvas coordinates to world coordinates
     const worldPos = viewport.screenToWorld(canvasX, canvasY);
