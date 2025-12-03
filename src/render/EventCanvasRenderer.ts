@@ -211,8 +211,9 @@ export class EventCanvasRenderer {
     const axisY = 0; // Axis at top
     const totalWidth = bounds?.width ?? window.innerWidth;
 
-    // LOD threshold: switch to compact mode when screen-space column width < 80px
-    const LOD_THRESHOLD = 80;
+    // LOD threshold: switch to compact mode when screen-space column width < 40px
+    // Lower than card LOD (80px) so axis stays detailed longer
+    const LOD_THRESHOLD = 40;
 
     // Draw axis background
     ctx.fillStyle = '#0f172a';
