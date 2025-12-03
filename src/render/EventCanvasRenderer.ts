@@ -227,6 +227,10 @@ export class EventCanvasRenderer {
     ctx.lineTo(totalWidth, axisHeight - 8);
     ctx.stroke();
 
+    // Transition range for smooth fade between modes
+    const TRANSITION_START = LOD_THRESHOLD + 20; // Start fading at 60px
+    const TRANSITION_END = LOD_THRESHOLD; // Fully compact at 40px
+
     // Draw each column
     axisColumns.forEach((col) => {
       // Alternating column backgrounds
@@ -235,17 +239,23 @@ export class EventCanvasRenderer {
 
       // Calculate screen-space column width
       const screenColWidth = col.width * currentScale;
-      const isCompactMode = screenColWidth < LOD_THRESHOLD;
 
-      if (isCompactMode) {
-        // Compact mode: Vertical rotated full date (DD.MM.YY)
-        // Use key (ISO format: 2025-04-13) to build compact date
-        const keyParts = col.key.split('-'); // ["2025", "04", "13"]
-        const fullDate = keyParts.length === 3
-          ? `${keyParts[2]}.${keyParts[1]}.${keyParts[0].slice(2)}` // "13.04.25"
-          : col.label;
+      // Calculate transition progress (1 = full detail, 0 = full compact)
+      const detailOpacity = Math.min(1, Math.max(0,
+        (screenColWidth - TRANSITION_END) / (TRANSITION_START - TRANSITION_END)
+      ));
+      const compactOpacity = 1 - detailOpacity;
 
+      // Compact date string
+      const keyParts = col.key.split('-'); // ["2025", "04", "13"]
+      const fullDate = keyParts.length === 3
+        ? `${keyParts[2]}.${keyParts[1]}.${keyParts[0].slice(2)}` // "13.04.25"
+        : col.label;
+
+      // Draw compact mode (vertical date) with fade
+      if (compactOpacity > 0) {
         ctx.save();
+        ctx.globalAlpha = compactOpacity;
 
         // Position at bottom of axis with padding
         const padding = 10;
@@ -256,7 +266,7 @@ export class EventCanvasRenderer {
         ctx.rotate(-Math.PI / 2); // Rotate 90° counter-clockwise
 
         // Font size limited to column width (text is rotated, so width = available height)
-        const fontSize = Math.min(col.width * 0.8, 200);
+        const fontSize = Math.min(col.width * 0.8, 150);
         ctx.fillStyle = '#e2e8f0';
         ctx.font = `300 ${fontSize}px "Bricolage Grotesque", sans-serif`; // 300 = light weight
         ctx.textAlign = 'left'; // Left = bottom after rotation
@@ -264,8 +274,13 @@ export class EventCanvasRenderer {
         ctx.fillText(fullDate, 0, 0);
 
         ctx.restore();
-      } else {
-        // Detail mode: Full horizontal date + article count
+      }
+
+      // Draw detail mode (horizontal date + count) with fade
+      if (detailOpacity > 0) {
+        ctx.save();
+        ctx.globalAlpha = detailOpacity;
+
         // Date label (centered horizontally in column)
         ctx.fillStyle = '#e2e8f0';
         ctx.font = 'bold 16px "Bricolage Grotesque", sans-serif';
@@ -277,6 +292,8 @@ export class EventCanvasRenderer {
         ctx.fillStyle = '#94a3b8';
         ctx.font = '12px "Bricolage Grotesque", sans-serif';
         ctx.fillText(`${col.eventCount} Artikel`, col.x + col.width / 2, axisY + 50);
+
+        ctx.restore();
       }
     });
 
