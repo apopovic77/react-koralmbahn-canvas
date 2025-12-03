@@ -209,7 +209,6 @@ export class EventCanvasRenderer {
 
     const axisHeight = 80; // Fixed axis height
     const axisY = 0; // Axis at top
-    const totalWidth = bounds?.width ?? window.innerWidth;
 
     // LOD threshold: switch to compact mode when screen-space column width < 40px
     // Lower than card LOD (80px) so axis stays detailed longer
