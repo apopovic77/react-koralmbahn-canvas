@@ -141,11 +141,28 @@ export class SummaryCanvasCard extends FixedSizeCanvasCard {
       this.drawQRCode(ctx, qrX, qrY, qrCodeSize);
     }
 
-    // Title (with space for QR code)
+    // Available width for text (accounting for QR code)
     const titleWidth = this.baseConfig.showQRCode
       ? textWidth - qrCodeSize - qrCodePadding
       : textWidth;
 
+    // Source/Publisher (above title)
+    if (this.event.sourceName) {
+      this.setSubtitleStyle(ctx);
+      currentY = this.drawMultilineText(
+        ctx,
+        this.event.sourceName.toUpperCase(),
+        textX,
+        currentY,
+        titleWidth,
+        this.typography.subtitleFontSize - 1,
+        1, // Single line
+        this.typography.subtitleFontSize,
+      );
+      currentY += 2;
+    }
+
+    // Title
     this.setTitleStyle(ctx);
     currentY = this.drawMultilineText(
       ctx,
@@ -158,14 +175,13 @@ export class SummaryCanvasCard extends FixedSizeCanvasCard {
       this.typography.titleLineHeight,
     );
 
-    // Subtitle (source name or subtitle)
-    const subtitle = this.event.subtitle || this.event.sourceName;
-    if (subtitle) {
+    // Subtitle (if different from source)
+    if (this.event.subtitle) {
       currentY += 4;
       this.setSubtitleStyle(ctx);
       currentY = this.drawMultilineText(
         ctx,
-        subtitle,
+        this.event.subtitle,
         textX,
         currentY,
         textWidth,
