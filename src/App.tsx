@@ -402,10 +402,15 @@ function App() {
         // Update events state with QR codes when all are ready
         if (completedCount === totalCount) {
           console.log(`[QR Codes] All ${totalCount} QR codes generated (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
-          setEvents(prevEvents => prevEvents.map(e => ({
-            ...e,
-            qrCode: qrCodeMap.get(e.id) ?? e.qrCode,
-          })));
+          console.log(`[QR Codes] Sample QR from map:`, qrCodeMap.get(events[0]?.id));
+          setEvents(prevEvents => {
+            const updated = prevEvents.map(e => ({
+              ...e,
+              qrCode: qrCodeMap.get(e.id) ?? e.qrCode,
+            }));
+            console.log(`[QR Codes] Updated events[0].qrCode:`, updated[0]?.qrCode ? 'present' : 'null');
+            return updated;
+          });
         }
       } catch (error) {
         console.error(`[App] QR code generation failed for event ${event.id}:`, error);

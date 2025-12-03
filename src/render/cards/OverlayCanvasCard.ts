@@ -102,6 +102,18 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
     const { ctx, x, y, width, height, image, lodState } = context;
     const { qrCodeSize, qrCodePadding } = this.baseConfig;
 
+    // Debug: Log event data for first few events
+    if (this.event.id && parseInt(this.event.id) < 5) {
+      console.log(`[Overlay Debug] Event ${this.event.id}:`, {
+        sourceName: this.event.sourceName,
+        title: this.event.title?.substring(0, 30),
+        qrCode: this.event.qrCode ? 'present' : 'null',
+        qrCodeComplete: this.event.qrCode?.complete,
+        showQRCode: this.baseConfig.showQRCode,
+        showSource: this.overlayConfig.showSource,
+      });
+    }
+
     // LOD: Image-only mode when card is too small for text
     const textOpacity = lodState?.textOpacity ?? 1;
     const isImageOnlyMode = textOpacity < 0.1;
