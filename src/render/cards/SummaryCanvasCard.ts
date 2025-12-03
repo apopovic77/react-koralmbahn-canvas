@@ -78,7 +78,8 @@ export class SummaryCanvasCard extends FixedSizeCanvasCard {
    * Render the card
    *
    * When LOD textOpacity is low (card is small), renders image-only mode
-   * for better performance and readability.
+   * for better performance and readability. Text fades in smoothly when
+   * transitioning back to detail mode.
    */
   render(context: CardRenderContext): void {
     const { ctx, x, y, width, height, image, lodState } = context;
@@ -87,6 +88,7 @@ export class SummaryCanvasCard extends FixedSizeCanvasCard {
     // LOD: Image-only mode when card is too small for text
     const textOpacity = lodState?.textOpacity ?? 1;
     const isImageOnlyMode = textOpacity < 0.1;
+    const isTransitioning = textOpacity >= 0.1 && textOpacity < 1.0;
 
     if (isImageOnlyMode) {
       // Render fullscreen image only (no text, no QR code)
@@ -102,12 +104,30 @@ export class SummaryCanvasCard extends FixedSizeCanvasCard {
     // Background
     this.renderCardBackground(context);
 
+    // During fade-in transition, draw fullscreen image underneath
+    if (isTransitioning) {
+      if (image && image.complete) {
+        this.drawImageCover(ctx, image, x, y, width, height, this.isScreenshot());
+      } else {
+        this.drawImagePlaceholder(ctx, x, y, width, height);
+      }
+    }
+
     // Calculate areas
     const imageHeight = Math.floor(height * this.summaryConfig.imageRatio);
     const textAreaY = y + imageHeight;
 
-    // Render image
+    // Render image (with fade during transition)
+    if (isTransitioning) {
+      // Image already drawn fullscreen above, now draw partial with opacity
+      ctx.save();
+      ctx.globalAlpha = textOpacity;
+    }
     this.renderImage(context, imageHeight);
+
+    // Text area background (white) - needs to fade in
+    ctx.fillStyle = this.baseConfig.backgroundColor;
+    ctx.fillRect(x, textAreaY, width, height - imageHeight);
 
     // Text area setup
     const textX = x + padding;
@@ -170,6 +190,11 @@ export class SummaryCanvasCard extends FixedSizeCanvasCard {
         this.typography.summaryLineHeight,
         this.summaryConfig.summaryEllipsis,
       );
+    }
+
+    // Restore alpha if we were transitioning
+    if (isTransitioning) {
+      ctx.restore();
     }
   }
 }

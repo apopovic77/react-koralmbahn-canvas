@@ -83,7 +83,8 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
    * Render the card
    *
    * When LOD textOpacity is low (card is small), renders image-only mode
-   * without gradient, text, or QR code for better performance.
+   * without gradient, text, or QR code for better performance. Text and
+   * gradient fade in smoothly when transitioning back to detail mode.
    */
   render(context: CardRenderContext): void {
     const { ctx, x, y, width, height, image, lodState } = context;
@@ -92,6 +93,7 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
     // LOD: Image-only mode when card is too small for text
     const textOpacity = lodState?.textOpacity ?? 1;
     const isImageOnlyMode = textOpacity < 0.1;
+    const isTransitioning = textOpacity >= 0.1 && textOpacity < 1.0;
 
     // Background (shadow + border)
     this.renderCardBackground(context);
@@ -108,6 +110,12 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
       return;
     }
 
+    // Apply fade-in for gradient/text/QR during transition
+    if (isTransitioning) {
+      ctx.save();
+      ctx.globalAlpha = textOpacity;
+    }
+
     // Debug ID
     this.drawDebugId(ctx, x, y);
 
@@ -122,6 +130,11 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
       const qrX = x + width - qrCodeSize - qrCodePadding;
       const qrY = y + height - qrCodeSize - qrCodePadding;
       this.drawQRCode(ctx, qrX, qrY, qrCodeSize);
+    }
+
+    // Restore alpha if we were transitioning
+    if (isTransitioning) {
+      ctx.restore();
     }
   }
 
