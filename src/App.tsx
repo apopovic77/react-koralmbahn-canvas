@@ -558,13 +558,20 @@ function App() {
     setLayoutBounds(bounds);
 
     const nodes = layoutEngine.all();
-    const positioned = nodes.map((node) => ({
-      ...node.data,
-      x: node.posX.value ?? 0,
-      y: node.posY.value ?? 0,
-      width: node.width.value ?? 0,
-      height: node.height.value ?? 0,
-    }));
+    // Create a map of current events to get latest qrCode values
+    const eventMap = new Map(displayEvents.map(e => [e.id, e]));
+    const positioned = nodes.map((node) => {
+      // Merge node.data with current event to get latest qrCode
+      const currentEvent = eventMap.get(node.data.id);
+      return {
+        ...node.data,
+        ...currentEvent, // Override with current event data (includes qrCode)
+        x: node.posX.value ?? 0,
+        y: node.posY.value ?? 0,
+        width: node.width.value ?? 0,
+        height: node.height.value ?? 0,
+      };
+    });
     setPositionedEvents(positioned);
   }, [displayEvents, viewportSize, layoutMode, cardStyle]);
 
