@@ -100,7 +100,7 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
    */
   render(context: CardRenderContext): void {
     const { ctx, x, y, width, height, image, lodState, scale = 1 } = context;
-    const { qrCodeSize, qrCodePadding } = this.baseConfig;
+    const { qrCodeSize } = this.baseConfig;
 
     // Store screen size for LOD decisions (e.g., borderRadius)
     this.currentScreenSize = {
@@ -194,31 +194,6 @@ export class OverlayCanvasCard extends FixedSizeCanvasCard {
 
     ctx.fillRect(x, gradientY, width, gradientHeight);
     ctx.restore();
-  }
-
-  /**
-   * Calculate the title Y position (needed for QR code alignment)
-   * Uses fixed positioning to match drawOverlayText
-   */
-  private calculateTitleY(y: number, height: number): number {
-    const { padding } = this.baseConfig;
-    const textPadding = padding * 1.5;
-
-    // Large title font (2x normal size) - must match drawOverlayText
-    const largeTitleLineHeight = this.typography.titleLineHeight * 2;
-
-    // Fixed layout heights - must match drawOverlayText (3 lines for subtitle)
-    const sourceHeight = this.overlayConfig.sourceFontSize + 4;
-    const subtitleMaxHeight = 3 * (this.typography.subtitleFontSize + 2) + 4;
-    const titleHeight = this.overlayConfig.titleMaxLines * largeTitleLineHeight;
-
-    // Calculate fixed positions from bottom - same as drawOverlayText
-    const bottomOffset = 0;
-    const sourceY = y + height - textPadding - bottomOffset;
-    const subtitleY = sourceY - sourceHeight - subtitleMaxHeight + 1;
-    const titleY = subtitleY + 5;
-
-    return titleY - titleHeight;
   }
 
   /**

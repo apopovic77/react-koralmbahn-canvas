@@ -397,7 +397,6 @@ function App() {
 
     let completedCount = 0;
     const totalCount = events.length;
-    const currentEventIds = events.map(e => e.id); // Capture IDs at start
 
     console.log(`[QR Codes] Starting generation for ${totalCount} events (Museum Mode: ${useMuseumQR ? 'ON' : 'OFF'})`);
 

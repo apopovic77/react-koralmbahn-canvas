@@ -28,8 +28,8 @@ interface UseKioskModeReturn {
 }
 
 const DEFAULT_OVERVIEW_DURATION = 10000; // 10 seconds
-const DEFAULT_ARTICLE_DURATION = 10000; // 8 seconds
-const DEFAULT_TRANSITION_SPEED = 0.9; // ~7 seconds (halved = 2x slower)
+const DEFAULT_ARTICLE_DURATION = 10000; // 10 seconds
+const DEFAULT_TRANSITION_SPEED = 0.06; // speedFactor: 3% per frame = slow smooth animation
 const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 8;
 
 export function useKioskMode({
@@ -106,8 +106,8 @@ export function useKioskMode({
       x: (canvasWidth - gridWidth * targetScale) / 2 - minX * targetScale,
       y: (canvasHeight - gridHeight * targetScale) / 2 - minY * targetScale,
     };
-    // @ts-expect-error - Accessing internal properties for kiosk mode
-    viewport.interpolationSpeed = transitionSpeed;
+    // Set animation speed (speedFactor: 0-1, lower = slower)
+    viewport.speedFactor = transitionSpeed;
 
     console.log('[Kiosk] Zooming to overview');
   };
@@ -130,8 +130,8 @@ export function useKioskMode({
       x: canvasWidth / 2 - centerX * targetScale,
       y: canvasHeight / 2 - centerY * targetScale,
     };
-    // @ts-expect-error - Accessing internal properties for kiosk mode
-    viewport.interpolationSpeed = transitionSpeed;
+    // Set animation speed (speedFactor: 0-1, lower = slower)
+    viewport.speedFactor = transitionSpeed;
 
     console.log(`[Kiosk] Zooming to article ${index + 1}/${events.length}: ${event.title}`);
   };
