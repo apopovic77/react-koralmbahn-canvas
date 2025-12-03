@@ -215,27 +215,12 @@ export class EventCanvasRenderer {
     // Lower than card LOD (80px) so axis stays detailed longer
     const LOD_THRESHOLD = 60;
 
-    // Draw axis background
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, axisY, totalWidth, axisHeight);
-
-    // Draw bottom border line (separator between axis and cards)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, axisHeight - 8);
-    ctx.lineTo(totalWidth, axisHeight - 8);
-    ctx.stroke();
-
     // Transition range for smooth fade between modes
-    const TRANSITION_START = LOD_THRESHOLD + 20; // Start fading at 60px
-    const TRANSITION_END = LOD_THRESHOLD; // Fully compact at 40px
+    const TRANSITION_START = LOD_THRESHOLD + 20; // Start fading at 80px
+    const TRANSITION_END = LOD_THRESHOLD; // Fully compact at 60px
 
     // Draw each column
     axisColumns.forEach((col) => {
-      // Alternating column backgrounds
-      ctx.fillStyle = col.index % 2 === 0 ? '#111b2f' : '#0d1526';
-      ctx.fillRect(col.x, axisY, col.width, axisHeight);
 
       // Calculate screen-space column width
       const screenColWidth = col.width * currentScale;
