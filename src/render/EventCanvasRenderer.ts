@@ -252,8 +252,7 @@ export class EventCanvasRenderer {
         // Font size limited to column width (text is rotated, so width = available height)
         const fontSize = Math.min(col.width * 0.8, 150);
         ctx.fillStyle = '#e2e8f0';
-        // Use monospace font for consistent character width (all dates same length)
-        ctx.font = `300 ${fontSize}px "JetBrains Mono", "SF Mono", "Consolas", monospace`;
+        ctx.font = `300 ${fontSize}px "Bricolage Grotesque", sans-serif`;
         ctx.textAlign = 'left'; // Left = bottom after rotation
         ctx.textBaseline = 'middle';
         ctx.fillText(fullDate, 0, 0);
