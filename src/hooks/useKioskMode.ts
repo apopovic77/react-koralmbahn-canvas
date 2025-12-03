@@ -55,13 +55,13 @@ export function useKioskMode({
   const [articlesViewedCount, setArticlesViewedCount] = useState<number>(0);
   const kioskTimerRef = useRef<number | null>(null);
 
-  // Priority queue for new events (only used in random mode)
+  // Priority queue for new events (used in BOTH modes - new articles are shown first)
   const [priorityQueue, setPriorityQueue] = useState<string[]>([]);
   const knownEventIdsRef = useRef<Set<string>>(new Set());
 
-  // Detect new events and add to priority queue (only in random mode)
+  // Detect new events and add to priority queue (works for BOTH sequential and random mode)
   useEffect(() => {
-    if (events.length === 0 || kioskStrategy !== 'random') return;
+    if (events.length === 0) return;
 
     const currentIds = new Set(events.map(e => e.id));
     const newEventIds: string[] = [];
@@ -78,7 +78,7 @@ export function useKioskMode({
 
     // Add new events to priority queue (if not first load)
     if (newEventIds.length > 0 && knownEventIdsRef.current.size > newEventIds.length) {
-      console.log(`[Kiosk] New events detected: ${newEventIds.length} - adding to priority queue`);
+      console.log(`[Kiosk] New events detected: ${newEventIds.length} - adding to priority queue (mode: ${kioskStrategy})`);
       setPriorityQueue(prev => [...newEventIds, ...prev]);
     }
   }, [events, kioskStrategy]);
@@ -154,8 +154,24 @@ export function useKioskMode({
 
   // Get next article index based on strategy
   const getNextArticleIndex = useCallback((): number => {
+    // BOTH modes: Check priority queue first (new articles get shown immediately)
+    if (priorityQueue.length > 0) {
+      const priorityEventId = priorityQueue[0];
+      const priorityIndex = events.findIndex(e => e.id === priorityEventId);
+
+      if (priorityIndex !== -1) {
+        // Remove from queue
+        setPriorityQueue(prev => prev.slice(1));
+        console.log(`[Kiosk] Showing NEW event (priority): ${events[priorityIndex].title}`);
+        return priorityIndex;
+      } else {
+        // Event no longer exists, remove from queue and continue
+        setPriorityQueue(prev => prev.slice(1));
+      }
+    }
+
     if (kioskStrategy === 'sequential') {
-      // Sequential: go backwards (newest first, index 0 = newest)
+      // Sequential: go through articles in order (index 0 = newest)
       // When at end, wrap to beginning
       const nextIndex = selectedArticleIndex + 1;
       if (nextIndex >= events.length) {
@@ -164,24 +180,32 @@ export function useKioskMode({
       return nextIndex;
     }
 
-    // Random mode: check priority queue first
-    if (priorityQueue.length > 0) {
-      const priorityEventId = priorityQueue[0];
-      const priorityIndex = events.findIndex(e => e.id === priorityEventId);
+    // Random mode: Weighted probability - newer articles have higher chance
+    // Events are sorted by date (index 0 = newest), so lower index = newer
+    // Use exponential decay: weight = e^(-index * decay)
+    const decayFactor = 0.05; // Higher = steeper decay (more bias toward new)
+    const weights: number[] = [];
+    let totalWeight = 0;
 
-      if (priorityIndex !== -1) {
-        // Remove from queue
-        setPriorityQueue(prev => prev.slice(1));
-        console.log(`[Kiosk] Showing priority event: ${events[priorityIndex].title}`);
-        return priorityIndex;
-      } else {
-        // Event no longer exists, remove from queue and try again
-        setPriorityQueue(prev => prev.slice(1));
+    for (let i = 0; i < events.length; i++) {
+      // Exponential weight: newest (i=0) gets weight ~1, older gets less
+      const weight = Math.exp(-i * decayFactor);
+      weights.push(weight);
+      totalWeight += weight;
+    }
+
+    // Pick random based on weights
+    let random = Math.random() * totalWeight;
+    for (let i = 0; i < events.length; i++) {
+      random -= weights[i];
+      if (random <= 0) {
+        console.log(`[Kiosk] Weighted random selected index ${i} (weight: ${(weights[i] / totalWeight * 100).toFixed(1)}%)`);
+        return i;
       }
     }
 
-    // Fall back to random
-    return Math.floor(Math.random() * events.length);
+    // Fallback (shouldn't reach)
+    return 0;
   }, [events, priorityQueue, selectedArticleIndex, kioskStrategy]);
 
   // Check if we should show overview (both modes use articlesBeforeOverview)
@@ -206,8 +230,8 @@ export function useKioskMode({
     } else {
       // In article mode
       kioskTimerRef.current = window.setTimeout(() => {
-        // Check if we have priority events (random mode only)
-        const hasPriorityEvents = kioskStrategy === 'random' && priorityQueue.length > 0;
+        // Check if we have priority events (BOTH modes now support this)
+        const hasPriorityEvents = priorityQueue.length > 0;
 
         // Check if should go to overview (both modes after N articles, skip if priority events)
         const shouldShowOverview = !hasPriorityEvents && shouldShowOverviewNow();
