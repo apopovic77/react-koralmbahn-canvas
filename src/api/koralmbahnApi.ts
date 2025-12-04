@@ -96,19 +96,32 @@ function mapEventToKoralmEvent(event: Event): KoralmEvent {
   let screenshotUrl: string | null = null;
   let isImageScreenshot = false;
 
-  if (event.hero_image_storage_id) {
-    imageUrl = wrapWithProxy(buildStorageMediaUrl(event.hero_image_storage_id));
-  }
+  // Check if user prefers screenshot over hero image
+  const eventAnyForPrefer = event as Event & { prefer_screenshot?: boolean };
+  const preferScreenshot = eventAnyForPrefer.prefer_screenshot === true;
 
-  if (event.screenshot_storage_id) {
-    screenshotUrl = wrapWithProxy(buildStorageMediaUrl(event.screenshot_storage_id));
+  const heroUrl = event.hero_image_storage_id
+    ? wrapWithProxy(buildStorageMediaUrl(event.hero_image_storage_id))
+    : null;
 
-    // If no hero image, use screenshot as main image
-    if (!imageUrl) {
-      imageUrl = screenshotUrl;
-      isImageScreenshot = true;
-      screenshotUrl = null;
-    }
+  const screenshotUrlBuilt = event.screenshot_storage_id
+    ? wrapWithProxy(buildStorageMediaUrl(event.screenshot_storage_id))
+    : null;
+
+  if (preferScreenshot && screenshotUrlBuilt) {
+    // User prefers screenshot - use it as main image
+    imageUrl = screenshotUrlBuilt;
+    isImageScreenshot = true;
+    screenshotUrl = heroUrl; // Show hero below if exists
+  } else if (heroUrl) {
+    // Normal case: hero image is primary
+    imageUrl = heroUrl;
+    screenshotUrl = screenshotUrlBuilt;
+  } else if (screenshotUrlBuilt) {
+    // No hero image - use screenshot as main image
+    imageUrl = screenshotUrlBuilt;
+    isImageScreenshot = true;
+    screenshotUrl = null;
   }
 
   // Parse tags (stored as JSON string in v2 API)
@@ -138,6 +151,7 @@ function mapEventToKoralmEvent(event: Event): KoralmEvent {
     imageUrl,
     screenshotUrl,
     isImageScreenshot,
+    preferScreenshot,
     publishedAt: event.published_at || null,
     sourceName: eventAny.source_name || null,
     category,

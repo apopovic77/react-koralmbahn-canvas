@@ -21,6 +21,7 @@ export interface KoralmEvent {
   imageUrl: string | null;
   screenshotUrl?: string | null; // Playwright/PDF screenshot URL
   isImageScreenshot?: boolean; // True if the main imageUrl is actually a screenshot
+  preferScreenshot?: boolean; // True if user prefers screenshot over hero image
   publishedAt: string | null;
   sourceName: string | null;
   category: string | null;
