@@ -31,8 +31,8 @@ interface UseKioskModeReturn {
   setKioskStrategy: (strategy: KioskStrategy) => void;
 }
 
-const DEFAULT_OVERVIEW_DURATION = 10000; // 10 seconds
-const DEFAULT_ARTICLE_DURATION = 10000; // 10 seconds
+const DEFAULT_OVERVIEW_DURATION = 15000; // 15 seconds
+const DEFAULT_ARTICLE_DURATION = 15000; // 15 seconds
 const DEFAULT_TRANSITION_SPEED = 0.06; // speedFactor: 6% per frame
 const DEFAULT_ARTICLES_BEFORE_OVERVIEW = 5;
 
