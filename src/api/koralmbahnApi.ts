@@ -167,7 +167,8 @@ export interface KioskSettings {
   overviewDuration: number;
   transitionDuration: number;
   pollingInterval: number;
-  detailLodThreshold: number;
+  imageLodThreshold: number;  // Zoom level at which high-res images are loaded (e.g., 1.5 = 150%)
+  detailLodThreshold: number; // Card width in pixels at which text/QR becomes visible
   kioskMode: 'chronological' | 'random';
 }
 
@@ -179,7 +180,8 @@ export const DEFAULT_KIOSK_SETTINGS: KioskSettings = {
   overviewDuration: 15.0,
   transitionDuration: 2.0,
   pollingInterval: 30.0,
-  detailLodThreshold: 1.5,
+  imageLodThreshold: 1.5,
+  detailLodThreshold: 180.0,
   kioskMode: 'chronological',
 };
 

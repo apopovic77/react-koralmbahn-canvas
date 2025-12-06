@@ -35,8 +35,10 @@ const PADDING = 15;
 const RENDER_FPS = 60; // Visual rendering at 60 FPS for smooth animations
 const UPDATE_FPS = 25; // Logic updates (culling, LOD) at 25 FPS for performance
 
-// Image LOD (Level of Detail) threshold
-const IMAGE_LOD_THRESHOLD = 1.5; // Above this zoom: use high-res images, below: use thumbnails
+// Image LOD (Level of Detail) threshold - now controlled by server settings
+// Fallback values only used before settings are loaded
+const DEFAULT_IMAGE_LOD_THRESHOLD = 1.5; // Above this zoom: use high-res images, below: use thumbnails
+const DEFAULT_DETAIL_LOD_THRESHOLD = 180; // Card width in pixels at which text/QR becomes visible
 
 // Auto-Card-Style mapping for each Layout Mode
 function getDefaultCardStyleForLayout(layoutMode: LayoutMode): CardStyle {
@@ -115,7 +117,8 @@ function App() {
 
   // Custom hooks
   const { getImage, loadHighResImage, preloadImages } = useImageCache();
-  const { updateLODState } = useLODTransitions({ cardLODThreshold: 180 });
+  // Use server-configured detail LOD threshold for text/QR visibility
+  const { updateLODState } = useLODTransitions({ cardLODThreshold: kioskSettings.detailLodThreshold || DEFAULT_DETAIL_LOD_THRESHOLD });
 
   // Real-time sync - polls for changes every 60 seconds
   const {
@@ -160,7 +163,7 @@ function App() {
   useEffect(() => {
     rendererRef.current = new EventCanvasRenderer({
       padding: PADDING,
-      imageLODThreshold: IMAGE_LOD_THRESHOLD,
+      imageLODThreshold: kioskSettings.imageLodThreshold || DEFAULT_IMAGE_LOD_THRESHOLD,
       getImage,
       loadHighResImage,
       updateLODState,
@@ -220,7 +223,7 @@ function App() {
       getImageAspectRatio,
       getExtraHeight,
     });
-  }, [getImage, loadHighResImage, updateLODState, isHighResEnabled]);
+  }, [getImage, loadHighResImage, updateLODState, isHighResEnabled, kioskSettings.imageLodThreshold]);
 
   // Manual mode hook
   const { isManualMode, manuallySelectedIndex, handleCanvasClick, handleCanvasRightClick, handleManualInteraction } = useManualMode({
@@ -1144,8 +1147,10 @@ function App() {
             <span style={{ color: '#60a5fa' }}>{kioskSettings.transitionDuration}s</span>
             <span style={{ opacity: 0.7 }}>Polling Interval:</span>
             <span style={{ color: '#60a5fa' }}>{kioskSettings.pollingInterval}s</span>
-            <span style={{ opacity: 0.7 }}>Detail LOD:</span>
-            <span style={{ color: '#60a5fa' }}>{kioskSettings.detailLodThreshold}</span>
+            <span style={{ opacity: 0.7 }}>Image LOD (Zoom):</span>
+            <span style={{ color: '#60a5fa' }}>{kioskSettings.imageLodThreshold}×</span>
+            <span style={{ opacity: 0.7 }}>Detail LOD (px):</span>
+            <span style={{ color: '#60a5fa' }}>{kioskSettings.detailLodThreshold}px</span>
             <span style={{ opacity: 0.7 }}>Kiosk Mode:</span>
             <span style={{ color: kioskSettings.kioskMode === 'random' ? '#f472b6' : '#4ade80' }}>
               {kioskSettings.kioskMode === 'random' ? '🎲 Random' : '📅 Chronological'}
