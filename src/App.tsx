@@ -5,7 +5,7 @@ import { ViewportTransform, useLODTransitions } from 'arkturian-canvas-engine';
 import { LayoutEngine } from 'arkturian-canvas-engine/src/layout/LayoutEngine';
 import type { LayoutNode } from 'arkturian-canvas-engine/src/layout/LayoutNode';
 
-import { fetchKoralmEvents } from './api/koralmbahnApi';
+import { fetchKoralmEvents, fetchKioskSettings, DEFAULT_KIOSK_SETTINGS, type KioskSettings } from './api/koralmbahnApi';
 import type { CardStyle, KoralmEvent } from './types/koralmbahn';
 import { useKioskMode } from './hooks/useKioskMode';
 import { useManualMode } from './hooks/useManualMode';
@@ -103,6 +103,7 @@ function App() {
   const [colorLODWithSentiment, setColorLODWithSentiment] = useState(true); // Color images with sentiment in LOD mode (Default: ON)
   const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all'); // Sentiment filter
   const [heroImageOnly, setHeroImageOnly] = useState(false); // Only show events with hero images (not screenshots)
+  const [kioskSettings, setKioskSettings] = useState<KioskSettings>(DEFAULT_KIOSK_SETTINGS); // Server-side kiosk settings
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Click detection refs (to distinguish clicks from drags)
@@ -385,6 +386,17 @@ function App() {
     }
 
     loadEvents();
+  }, []);
+
+  // Load kiosk settings from server
+  useEffect(() => {
+    async function loadKioskSettings() {
+      const settings = await fetchKioskSettings();
+      setKioskSettings(settings);
+      console.log('[App] Kiosk settings loaded:', settings);
+    }
+
+    loadKioskSettings();
   }, []);
 
   // Generate QR codes when events change
@@ -1118,6 +1130,30 @@ function App() {
               +{lastSyncStats.created} ~{lastSyncStats.updated} -{lastSyncStats.deleted}
             </div>
           )}
+        </div>
+
+        {/* Server Kiosk Settings */}
+        <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: '8px' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>⚙️ Server Kiosk Settings</div>
+          <div style={{ fontSize: '11px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px' }}>
+            <span style={{ opacity: 0.7 }}>Article Duration:</span>
+            <span style={{ color: '#60a5fa' }}>{kioskSettings.articleDuration}s</span>
+            <span style={{ opacity: 0.7 }}>Overview Duration:</span>
+            <span style={{ color: '#60a5fa' }}>{kioskSettings.overviewDuration}s</span>
+            <span style={{ opacity: 0.7 }}>Transition:</span>
+            <span style={{ color: '#60a5fa' }}>{kioskSettings.transitionDuration}s</span>
+            <span style={{ opacity: 0.7 }}>Polling Interval:</span>
+            <span style={{ color: '#60a5fa' }}>{kioskSettings.pollingInterval}s</span>
+            <span style={{ opacity: 0.7 }}>Detail LOD:</span>
+            <span style={{ color: '#60a5fa' }}>{kioskSettings.detailLodThreshold}</span>
+            <span style={{ opacity: 0.7 }}>Kiosk Mode:</span>
+            <span style={{ color: kioskSettings.kioskMode === 'random' ? '#f472b6' : '#4ade80' }}>
+              {kioskSettings.kioskMode === 'random' ? '🎲 Random' : '📅 Chronological'}
+            </span>
+          </div>
+          <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '6px' }}>
+            Configured via: /static/debug.html
+          </div>
         </div>
       </div>
       )}

@@ -160,6 +160,53 @@ function mapEventToKoralmEvent(event: Event): KoralmEvent {
 }
 
 /**
+ * Kiosk settings from server
+ */
+export interface KioskSettings {
+  articleDuration: number;
+  overviewDuration: number;
+  transitionDuration: number;
+  pollingInterval: number;
+  detailLodThreshold: number;
+  kioskMode: 'chronological' | 'random';
+}
+
+/**
+ * Default kiosk settings (matches server defaults)
+ */
+export const DEFAULT_KIOSK_SETTINGS: KioskSettings = {
+  articleDuration: 30.0,
+  overviewDuration: 15.0,
+  transitionDuration: 2.0,
+  pollingInterval: 30.0,
+  detailLodThreshold: 1.5,
+  kioskMode: 'chronological',
+};
+
+/**
+ * Fetch kiosk settings from server
+ */
+export async function fetchKioskSettings(): Promise<KioskSettings> {
+  const baseUrl = resolveApiBaseUrl();
+  const url = `${baseUrl}/api/v1/debug/kiosk/settings`;
+
+  console.log('[KoralmAPI] Fetching kiosk settings from:', url);
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    console.log('[KoralmAPI] Loaded kiosk settings:', data);
+    return data as KioskSettings;
+  } catch (error) {
+    console.error('[KoralmAPI] Failed to fetch kiosk settings:', error);
+    return DEFAULT_KIOSK_SETTINGS;
+  }
+}
+
+/**
  * Fetch events from EventCrawler v2 API using the SDK
  */
 export async function fetchKoralmEvents(
