@@ -71,6 +71,8 @@ interface RenderFrameParams {
   lineStartMode?: 'card' | 'axis' | 'axisToCard';
   /** Color card images with sentiment color when in LOD mode (text hidden) */
   colorLODWithSentiment?: boolean;
+  /** Detail LOD threshold in pixels - axis labels appear when card width exceeds this */
+  detailLodThreshold?: number;
 }
 
 export class EventCanvasRenderer {
@@ -169,6 +171,7 @@ export class EventCanvasRenderer {
       alwaysShowSentimentLines = true,
       lineStartMode = 'card',
       colorLODWithSentiment = false,
+      detailLodThreshold = 180,
     } = params;
 
     const currentScale = viewport.scale;
@@ -215,7 +218,7 @@ export class EventCanvasRenderer {
 
     // Render axis only in dayTimelinePortrait mode (portrait - horizontal axis at bottom)
     if (layoutMode === 'dayTimelinePortrait' && axisColumns) {
-      this.drawPortraitAxis(ctx, axisColumns, bounds, currentScale, showCompactAxis);
+      this.drawPortraitAxis(ctx, axisColumns, bounds, currentScale, showCompactAxis, detailLodThreshold);
     }
 
     // Render axis for dayTimelineVertical mode (vertical - left axis with dates as rows)
@@ -288,6 +291,7 @@ export class EventCanvasRenderer {
    * LOD behavior:
    * - Detail mode (wide columns): Horizontal date + article count
    * - Compact mode (narrow columns): Vertical rotated day number only
+   * - Threshold is synced with card text/QR visibility (detailLodThreshold)
    */
   private drawPortraitAxis(
     ctx: CanvasRenderingContext2D,
@@ -295,19 +299,20 @@ export class EventCanvasRenderer {
     _bounds: DayTimelineBounds | DayTimelinePortraitBounds | null,
     currentScale: number,
     showCompactAxis: boolean = true,
+    detailLodThreshold: number = 180,
   ): void {
     ctx.save(); // Save context state to prevent text alignment leaking to cards
 
     const axisHeight = 80; // Fixed axis height
     const axisY = 0; // Axis at top
 
-    // LOD threshold: switch to compact mode when screen-space column width < 40px
-    // Lower than card LOD (80px) so axis stays detailed longer
-    const LOD_THRESHOLD = 60;
+    // LOD threshold: use same threshold as card text/QR visibility
+    // This syncs axis labels with card details appearing
+    const LOD_THRESHOLD = detailLodThreshold;
 
     // Transition range for smooth fade between modes
-    const TRANSITION_START = LOD_THRESHOLD + 20; // Start fading at 80px
-    const TRANSITION_END = LOD_THRESHOLD; // Fully compact at 60px
+    const TRANSITION_START = LOD_THRESHOLD + 20; // Start fading 20px before threshold
+    const TRANSITION_END = LOD_THRESHOLD; // Fully compact at threshold
 
     // Draw each column
     axisColumns.forEach((col) => {

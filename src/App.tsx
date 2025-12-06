@@ -897,6 +897,7 @@ function App() {
         showCompactAxis,
         lineStartMode,
         colorLODWithSentiment,
+        detailLodThreshold: kioskSettings.detailLodThreshold || DEFAULT_DETAIL_LOD_THRESHOLD,
       });
 
       animationFrameRef.current = requestAnimationFrame(render);
