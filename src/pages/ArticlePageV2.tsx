@@ -158,46 +158,27 @@ export default function ArticlePageV2() {
             <p className="hero-subtitle">{article.subtitle}</p>
           )}
         </div>
-
-        {/* Scroll indicator */}
-        <div className="scroll-indicator">
-          <span>Mehr erfahren</span>
-          <div className="scroll-arrow">↓</div>
-        </div>
       </section>
 
       {/* Details Section - Scrollable content */}
       <section className="article-v2-details">
-        {/* Meta Info Bar */}
-        <div className="meta-bar">
-          {/* Sentiment */}
-          <div className={`meta-item sentiment ${sentiment.className}`}>
-            <span className="meta-emoji">{sentiment.emoji}</span>
-            <span className="meta-label">{sentiment.label}</span>
-            {article.sentiment !== null && article.sentiment !== undefined && (
-              <span className="meta-value">({(article.sentiment * 100).toFixed(0)}%)</span>
-            )}
-          </div>
+        {/* Meta Info - Clean inline display */}
+        <div className="meta-inline">
+          {/* Sentiment Pill */}
+          <span className={`meta-pill sentiment ${sentiment.className}`}>
+            {sentiment.emoji} {sentiment.label}
+          </span>
 
           {/* Date */}
-          <div className="meta-item date">
-            <span className="meta-emoji">📅</span>
-            <span className="meta-label">{publishedDate}</span>
-          </div>
+          <span className="meta-pill date">
+            📅 {publishedDate}
+          </span>
 
           {/* Source/Publisher */}
           {article.sourceName && (
-            <div className="meta-item source">
-              <span className="meta-emoji">📰</span>
-              <span className="meta-label">{article.sourceName}</span>
-            </div>
-          )}
-
-          {/* Category */}
-          {article.category && (
-            <div className="meta-item category">
-              <span className="category-tag">{article.category}</span>
-            </div>
+            <span className="meta-pill source">
+              📰 {article.sourceName}
+            </span>
           )}
         </div>
 
@@ -243,9 +224,15 @@ export default function ArticlePageV2() {
 
         {/* Footer */}
         <footer className="article-footer">
-          <p className="footer-museum">Koralmbahn Digital Museum</p>
+          <div className="footer-museum-logo">
+            <span className="museum-name">Landesmuseum Kärnten</span>
+            <span className="museum-location">Klagenfurt</span>
+          </div>
+          <p className="footer-exhibition">
+            Sonderausstellung: Die Koralmbahn — Jahrhundertprojekt der Infrastruktur
+          </p>
           <p className="footer-info">
-            Dieser Artikel wurde automatisch erfasst und mit KI-Unterstützung analysiert.
+            Diese Nachricht wurde automatisch erfasst und mit KI-Unterstützung analysiert.
           </p>
         </footer>
       </section>
