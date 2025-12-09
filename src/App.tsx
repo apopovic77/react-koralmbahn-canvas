@@ -68,6 +68,9 @@ function App() {
   const animationFrameRef = useRef<number | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
+  const fpsFrameCountRef = useRef<number>(0); // FPS counter
+  const fpsLastTimeRef = useRef<number>(0); // Last FPS update time
+  const debugStatsRef = useRef({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0 }); // Mutable ref for perf
   const dayLayouterRef = useRef(new DayTimelineLayouter());
   const dayPortraitLayouterRef = useRef(new DayTimelinePortraitLayouter());
   const singleRowLayouterRef = useRef(new SingleRowTimelineLayouter());
@@ -97,6 +100,7 @@ function App() {
   const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimelinePortrait'); // F8: Layout Mode (Default: dayTimelinePortrait)
   const [showDebugPanel, setShowDebugPanel] = useState(false); // F9: Debug Panel (Default: OFF)
+  const [debugStats, setDebugStats] = useState({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0 }); // Real-time debug stats
   const [cardStyle, setCardStyle] = useState<CardStyle>('imageOnly'); // F10: Card Style (Default: imageOnly)
   const [isGlowBorderEnabled, setIsGlowBorderEnabled] = useState(true); // F11: Glow Border on active kiosk card (Default: ON)
   const [isMinGroupingEnabled, setIsMinGroupingEnabled] = useState(true); // F12: Min 2 per column grouping (Default: ON)
@@ -900,6 +904,50 @@ function App() {
         detailLodThreshold: kioskSettings.detailLodThreshold || DEFAULT_DETAIL_LOD_THRESHOLD,
       });
 
+      // Update FPS counter
+      fpsFrameCountRef.current++;
+      const fpsElapsed = currentTime - fpsLastTimeRef.current;
+      if (fpsElapsed >= 500) { // Update FPS every 500ms
+        const fps = Math.round((fpsFrameCountRef.current * 1000) / fpsElapsed);
+        fpsFrameCountRef.current = 0;
+        fpsLastTimeRef.current = currentTime;
+
+        // Calculate visible cards (simple viewport culling check)
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const cssWidth = canvas.width / devicePixelRatio;
+        const cssHeight = canvas.height / devicePixelRatio;
+        const viewMinX = (-viewport.offset.x) / viewport.scale;
+        const viewMinY = (-viewport.offset.y) / viewport.scale;
+        const viewMaxX = viewMinX + cssWidth / viewport.scale;
+        const viewMaxY = viewMinY + cssHeight / viewport.scale;
+        const cullMargin = 80;
+
+        let visibleCount = 0;
+        nodes.forEach((node) => {
+          const x = node.posX.value ?? 0;
+          const y = node.posY.value ?? 0;
+          const w = node.width.value ?? 0;
+          const h = node.height.value ?? 0;
+          if (x + w >= viewMinX - cullMargin && x <= viewMaxX + cullMargin &&
+              y + h >= viewMinY - cullMargin && y <= viewMaxY + cullMargin) {
+            visibleCount++;
+          }
+        });
+
+        // Update debug stats ref (no re-render)
+        debugStatsRef.current = {
+          scale: viewport.scale,
+          fps,
+          visibleCards: visibleCount,
+          totalCards: nodes.length,
+        };
+
+        // Only update state if debug panel is visible (to avoid unnecessary re-renders)
+        if (showDebugPanel) {
+          setDebugStats(debugStatsRef.current);
+        }
+      }
+
       animationFrameRef.current = requestAnimationFrame(render);
     };
 
@@ -937,6 +985,33 @@ function App() {
         overflowY: 'auto',
       }}>
         <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '13px' }}>Debug Panel (F9 to hide)</div>
+
+        {/* Performance Stats - prominent display */}
+        <div style={{
+          background: debugStats.fps < 30 ? 'rgba(239, 68, 68, 0.3)' : debugStats.fps < 50 ? 'rgba(234, 179, 8, 0.3)' : 'rgba(34, 197, 94, 0.2)',
+          padding: '8px 10px',
+          borderRadius: '6px',
+          marginBottom: '10px',
+          border: `1px solid ${debugStats.fps < 30 ? '#ef4444' : debugStats.fps < 50 ? '#eab308' : '#22c55e'}`,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', opacity: 0.8 }}>Scale:</span>
+            <span style={{ fontSize: '16px', fontWeight: 'bold', color: '#60a5fa' }}>{debugStats.scale.toFixed(3)}×</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+            <span style={{ fontSize: '11px', opacity: 0.8 }}>FPS:</span>
+            <span style={{
+              fontSize: '16px',
+              fontWeight: 'bold',
+              color: debugStats.fps < 30 ? '#ef4444' : debugStats.fps < 50 ? '#eab308' : '#22c55e'
+            }}>{debugStats.fps}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+            <span style={{ fontSize: '11px', opacity: 0.8 }}>Visible:</span>
+            <span style={{ fontSize: '14px', color: '#a5b4fc' }}>{debugStats.visibleCards} / {debugStats.totalCards}</span>
+          </div>
+        </div>
+
         <div>F1: 3D Mode {is3DMode ? '✅' : '❌'}</div>
         <div>F2: LOD {isLODEnabled ? '✅' : '❌'}</div>
         <div>F3: Kiosk {isKioskModeEnabled ? '✅' : '❌'}</div>
