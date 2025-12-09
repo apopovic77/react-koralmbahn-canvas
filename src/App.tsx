@@ -70,7 +70,7 @@ function App() {
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
   const fpsFrameCountRef = useRef<number>(0); // FPS counter
   const fpsLastTimeRef = useRef<number>(0); // Last FPS update time
-  const debugStatsRef = useRef({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0 }); // Mutable ref for perf
+  const debugStatsRef = useRef({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0, avgCardWidth: 0 }); // Mutable ref for perf
   const dayLayouterRef = useRef(new DayTimelineLayouter());
   const dayPortraitLayouterRef = useRef(new DayTimelinePortraitLayouter());
   const singleRowLayouterRef = useRef(new SingleRowTimelineLayouter());
@@ -100,7 +100,7 @@ function App() {
   const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimelinePortrait'); // F8: Layout Mode (Default: dayTimelinePortrait)
   const [showDebugPanel, setShowDebugPanel] = useState(false); // F9: Debug Panel (Default: OFF)
-  const [debugStats, setDebugStats] = useState({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0 }); // Real-time debug stats
+  const [debugStats, setDebugStats] = useState({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0, avgCardWidth: 0 }); // Real-time debug stats
   const [cardStyle, setCardStyle] = useState<CardStyle>('imageOnly'); // F10: Card Style (Default: imageOnly)
   const [isGlowBorderEnabled, setIsGlowBorderEnabled] = useState(true); // F11: Glow Border on active kiosk card (Default: ON)
   const [isMinGroupingEnabled, setIsMinGroupingEnabled] = useState(true); // F12: Min 2 per column grouping (Default: ON)
@@ -934,12 +934,24 @@ function App() {
           }
         });
 
+        // Calculate card width in screen pixels (for LOD debugging)
+        let avgCardScreenWidth = 0;
+        if (visibleCount > 0) {
+          let totalWidth = 0;
+          nodes.forEach((node) => {
+            const w = node.width.value ?? 0;
+            if (w > 0) totalWidth += w * viewport.scale;
+          });
+          avgCardScreenWidth = Math.round(totalWidth / nodes.length);
+        }
+
         // Update debug stats ref (no re-render)
         debugStatsRef.current = {
           scale: viewport.scale,
           fps,
           visibleCards: visibleCount,
           totalCards: nodes.length,
+          avgCardWidth: avgCardScreenWidth,
         };
 
         // Only update state if debug panel is visible (to avoid unnecessary re-renders)
@@ -1009,6 +1021,18 @@ function App() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
             <span style={{ fontSize: '11px', opacity: 0.8 }}>Visible:</span>
             <span style={{ fontSize: '14px', color: '#a5b4fc' }}>{debugStats.visibleCards} / {debugStats.totalCards}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+            <span style={{ fontSize: '11px', opacity: 0.8 }}>Card Width:</span>
+            <span style={{
+              fontSize: '14px',
+              color: debugStats.avgCardWidth >= (kioskSettings.detailLodThreshold || 180) ? '#22c55e' : '#f472b6'
+            }}>
+              {debugStats.avgCardWidth}px {debugStats.avgCardWidth >= (kioskSettings.detailLodThreshold || 180) ? '(Detail)' : '(LOD)'}
+            </span>
+          </div>
+          <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '4px' }}>
+            LOD Threshold: {kioskSettings.detailLodThreshold || 180}px
           </div>
         </div>
 
