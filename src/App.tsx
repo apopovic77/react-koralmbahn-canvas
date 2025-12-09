@@ -33,7 +33,7 @@ const PADDING = 15;
 
 // Performance settings (game engine pattern)
 const RENDER_FPS = 60; // Visual rendering at 60 FPS for smooth animations
-const DEFAULT_UPDATE_FPS = 25; // Logic updates (culling, LOD) - configurable via debug panel
+const DEFAULT_UPDATE_FPS = 60; // Logic updates (culling, LOD) - synced with render for smoothness
 
 // Image LOD (Level of Detail) threshold - now controlled by server settings
 // Fallback values only used before settings are loaded
