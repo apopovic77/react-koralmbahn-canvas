@@ -248,6 +248,13 @@ function App() {
   };
 
   // Kiosk mode hook
+  // Convert transitionDuration (seconds) to speedFactor (0-1)
+  // speedFactor controls animation speed: lower = slower, higher = faster
+  // transitionDuration 1s → speedFactor ~0.12, 2s → ~0.06, 5s → ~0.024
+  const transitionSpeedFactor = kioskSettings.transitionDuration > 0
+    ? 0.12 / kioskSettings.transitionDuration
+    : 0.06;
+
   const { kioskMode, kioskStrategy, articlesViewedCount, selectedArticleIndex, setKioskStrategy } = useKioskMode({
     viewport: viewportRef.current,
     events: positionedEvents,
@@ -255,6 +262,9 @@ function App() {
     canvasHeight: window.innerHeight,
     isManualMode,
     isKioskModeEnabled,
+    overviewDuration: kioskSettings.overviewDuration * 1000, // Convert seconds to ms
+    articleDuration: kioskSettings.articleDuration * 1000,   // Convert seconds to ms
+    transitionSpeed: transitionSpeedFactor,
   });
 
   // Custom click handlers that work with viewport drag
