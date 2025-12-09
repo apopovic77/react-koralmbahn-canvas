@@ -73,6 +73,8 @@ interface RenderFrameParams {
   colorLODWithSentiment?: boolean;
   /** Detail LOD threshold in pixels - axis labels appear when card width exceeds this */
   detailLodThreshold?: number;
+  /** Pre-computed visible node IDs from update loop (for cached culling) */
+  visibleNodeIds?: Set<string>;
 }
 
 export class EventCanvasRenderer {
@@ -172,6 +174,7 @@ export class EventCanvasRenderer {
       lineStartMode = 'card',
       colorLODWithSentiment = false,
       detailLodThreshold = 180,
+      visibleNodeIds,
     } = params;
 
     const currentScale = viewport.scale;
@@ -244,6 +247,7 @@ export class EventCanvasRenderer {
       isKioskMode,
       activeSentiment,
       colorLODWithSentiment,
+      visibleNodeIds,
     });
 
     ctx.restore();
@@ -480,21 +484,30 @@ export class EventCanvasRenderer {
       isKioskMode?: boolean;
       activeSentiment?: number | null;
       colorLODWithSentiment?: boolean;
+      visibleNodeIds?: Set<string>;
     },
   ): void {
-    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport, eventMap, showDebug, activeCardIndex, isKioskMode, activeSentiment, colorLODWithSentiment } = params;
+    const { nodes, currentScale, useHighRes, isLODEnabled, failedImages, viewport, eventMap, showDebug, activeCardIndex, isKioskMode, activeSentiment, colorLODWithSentiment, visibleNodeIds } = params;
 
     // Update glow border animation
     this.glowBorder.updateWithTime(performance.now());
 
-    const devicePixelRatio = window.devicePixelRatio || 1;
-    const cssWidth = ctx.canvas.width / devicePixelRatio;
-    const cssHeight = ctx.canvas.height / devicePixelRatio;
-    const viewMinX = (-viewport.offset.x) / viewport.scale;
-    const viewMinY = (-viewport.offset.y) / viewport.scale;
-    const viewMaxX = viewMinX + cssWidth / viewport.scale;
-    const viewMaxY = viewMinY + cssHeight / viewport.scale;
+    // Use pre-computed visible nodes if available (cached culling from update loop)
+    // Falls back to per-frame culling if visibleNodeIds not provided
+    const useCachedCulling = visibleNodeIds && visibleNodeIds.size > 0;
+
+    // Fallback: calculate viewport bounds for per-frame culling
+    let viewMinX = 0, viewMinY = 0, viewMaxX = 0, viewMaxY = 0;
     const cullMargin = 80;
+    if (!useCachedCulling) {
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      const cssWidth = ctx.canvas.width / devicePixelRatio;
+      const cssHeight = ctx.canvas.height / devicePixelRatio;
+      viewMinX = (-viewport.offset.x) / viewport.scale;
+      viewMinY = (-viewport.offset.y) / viewport.scale;
+      viewMaxX = viewMinX + cssWidth / viewport.scale;
+      viewMaxY = viewMinY + cssHeight / viewport.scale;
+    }
 
     nodes.forEach((node) => {
       // Use eventMap to get current event data (with QR codes), fallback to node.data
@@ -505,15 +518,21 @@ export class EventCanvasRenderer {
       const height = node.height.value ?? 0;
       if (!width || !height) return;
 
-      const eventMinX = x;
-      const eventMaxX = x + width;
-      const eventMinY = y;
-      const eventMaxY = y + height;
-      const isVisible =
-        eventMaxX >= viewMinX - cullMargin &&
-        eventMinX <= viewMaxX + cullMargin &&
-        eventMaxY >= viewMinY - cullMargin &&
-        eventMinY <= viewMaxY + cullMargin;
+      // Use cached culling or fallback to per-frame check
+      let isVisible: boolean;
+      if (useCachedCulling) {
+        isVisible = visibleNodeIds!.has(event.id);
+      } else {
+        const eventMinX = x;
+        const eventMaxX = x + width;
+        const eventMinY = y;
+        const eventMaxY = y + height;
+        isVisible =
+          eventMaxX >= viewMinX - cullMargin &&
+          eventMinX <= viewMaxX + cullMargin &&
+          eventMaxY >= viewMinY - cullMargin &&
+          eventMinY <= viewMaxY + cullMargin;
+      }
 
       if (!isVisible) {
         return;

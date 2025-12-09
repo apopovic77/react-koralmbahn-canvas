@@ -33,7 +33,7 @@ const PADDING = 15;
 
 // Performance settings (game engine pattern)
 const RENDER_FPS = 60; // Visual rendering at 60 FPS for smooth animations
-const UPDATE_FPS = 25; // Logic updates (culling, LOD) at 25 FPS for performance
+const DEFAULT_UPDATE_FPS = 25; // Logic updates (culling, LOD) - configurable via debug panel
 
 // Image LOD (Level of Detail) threshold - now controlled by server settings
 // Fallback values only used before settings are loaded
@@ -71,6 +71,7 @@ function App() {
   const fpsFrameCountRef = useRef<number>(0); // FPS counter
   const fpsLastTimeRef = useRef<number>(0); // Last FPS update time
   const debugStatsRef = useRef({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0, avgCardWidth: 0, renderMs: 0 }); // Mutable ref for perf
+  const visibleNodesRef = useRef<Set<string>>(new Set()); // Cached visible node IDs (updated at UPDATE_FPS)
   const dayLayouterRef = useRef(new DayTimelineLayouter());
   const dayPortraitLayouterRef = useRef(new DayTimelinePortraitLayouter());
   const singleRowLayouterRef = useRef(new SingleRowTimelineLayouter());
@@ -110,6 +111,7 @@ function App() {
   const [sentimentFilter, setSentimentFilter] = useState<'all' | 'positive' | 'neutral' | 'negative'>('all'); // Sentiment filter
   const [heroImageOnly, setHeroImageOnly] = useState(false); // Only show events with hero images (not screenshots)
   const [kioskSettings, setKioskSettings] = useState<KioskSettings>(DEFAULT_KIOSK_SETTINGS); // Server-side kiosk settings
+  const [updateFPS, setUpdateFPS] = useState(DEFAULT_UPDATE_FPS); // Configurable update rate for culling/LOD
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Click detection refs (to distinguish clicks from drags)
@@ -825,7 +827,6 @@ function App() {
     if (!ctx) return;
 
     const renderInterval = 1000 / RENDER_FPS;
-    const updateInterval = 1000 / UPDATE_FPS;
 
     const render = (currentTime: number) => {
       const renderDelta = currentTime - lastFrameTimeRef.current;
@@ -835,10 +836,37 @@ function App() {
       }
       lastFrameTimeRef.current = currentTime - (renderDelta % renderInterval);
 
+      // Dynamic update interval based on configurable updateFPS
+      const updateInterval = 1000 / updateFPS;
       const updateDelta = currentTime - lastUpdateTimeRef.current;
       const shouldUpdate = updateDelta >= updateInterval;
       if (shouldUpdate) {
         lastUpdateTimeRef.current = currentTime - (updateDelta % updateInterval);
+
+        // === UPDATE LOOP (runs at updateFPS) ===
+        // Perform culling check here instead of every render frame
+        const nodes = layoutEngineRef.current.all();
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        const cssWidth = canvas.width / devicePixelRatio;
+        const cssHeight = canvas.height / devicePixelRatio;
+        const viewMinX = (-viewport.offset.x) / viewport.scale;
+        const viewMinY = (-viewport.offset.y) / viewport.scale;
+        const viewMaxX = viewMinX + cssWidth / viewport.scale;
+        const viewMaxY = viewMinY + cssHeight / viewport.scale;
+        const cullMargin = 80;
+
+        // Update visible nodes set
+        visibleNodesRef.current.clear();
+        nodes.forEach((node) => {
+          const x = node.posX.value ?? 0;
+          const y = node.posY.value ?? 0;
+          const w = node.width.value ?? 0;
+          const h = node.height.value ?? 0;
+          if (x + w >= viewMinX - cullMargin && x <= viewMaxX + cullMargin &&
+              y + h >= viewMinY - cullMargin && y <= viewMaxY + cullMargin) {
+            visibleNodesRef.current.add(node.data.id);
+          }
+        });
       }
 
       viewport.update();
@@ -905,6 +933,7 @@ function App() {
         lineStartMode,
         colorLODWithSentiment,
         detailLodThreshold: kioskSettings.detailLodThreshold || DEFAULT_DETAIL_LOD_THRESHOLD,
+        visibleNodeIds: visibleNodesRef.current, // Pre-computed visible nodes from update loop
       });
 
       const renderEndTime = performance.now();
@@ -981,7 +1010,7 @@ function App() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, selectedArticleIndex, isLODEnabled, isKioskModeEnabled, isGlowBorderEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, showDebugPanel, showCompactAxis, isManualMode, manuallySelectedIndex, lineStartMode, colorLODWithSentiment]);
+  }, [displayEvents, axisRows, axisColumns, layoutMetrics, layoutBounds, kioskMode, articlesViewedCount, selectedArticleIndex, isLODEnabled, isKioskModeEnabled, isGlowBorderEnabled, is3DMode, isHighResEnabled, viewportMode, positionedEvents, showDebugPanel, showCompactAxis, isManualMode, manuallySelectedIndex, lineStartMode, colorLODWithSentiment, updateFPS]);
 
   return (
     <div className="app-container">
@@ -1049,6 +1078,27 @@ function App() {
           </div>
           <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '4px' }}>
             LOD Threshold: {kioskSettings.detailLodThreshold || 180}px | Target: 16.6ms/frame
+          </div>
+
+          {/* Update FPS Slider */}
+          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', opacity: 0.8 }}>Update FPS:</span>
+              <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#f472b6' }}>{updateFPS}</span>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="60"
+              step="5"
+              value={updateFPS}
+              onChange={(e) => setUpdateFPS(Number(e.target.value))}
+              style={{ width: '100%', marginTop: '4px', cursor: 'pointer' }}
+            />
+            <div style={{ fontSize: '9px', opacity: 0.5, display: 'flex', justifyContent: 'space-between' }}>
+              <span>5 (save CPU)</span>
+              <span>60 (smooth)</span>
+            </div>
           </div>
         </div>
 
