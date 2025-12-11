@@ -70,7 +70,10 @@ function App() {
   const lastUpdateTimeRef = useRef<number>(0); // Separate timer for update loop
   const fpsFrameCountRef = useRef<number>(0); // FPS counter
   const fpsLastTimeRef = useRef<number>(0); // Last FPS update time
-  const debugStatsRef = useRef({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0, avgCardWidth: 0, renderMs: 0 }); // Mutable ref for perf
+  const debugStatsRef = useRef({
+    scale: 1, fps: 0, visibleCards: 0, totalCards: 0, avgCardWidth: 0,
+    renderMs: 0, cullMs: 0, prepMs: 0, drawMs: 0, updateMs: 0, snapMs: 0
+  }); // Mutable ref for perf
   const visibleNodesRef = useRef<Set<string>>(new Set()); // Cached visible node IDs (updated at UPDATE_FPS)
   const dayLayouterRef = useRef(new DayTimelineLayouter());
   const dayPortraitLayouterRef = useRef(new DayTimelinePortraitLayouter());
@@ -101,7 +104,7 @@ function App() {
   const [viewportMode, setViewportMode] = useState<ViewportMode>('off'); // F7: Viewport Mode (Default: OFF)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('dayTimelinePortrait'); // F8: Layout Mode (Default: dayTimelinePortrait)
   const [showDebugPanel, setShowDebugPanel] = useState(false); // F9: Debug Panel (Default: OFF)
-  const [debugStats, setDebugStats] = useState({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0, avgCardWidth: 0, renderMs: 0 }); // Real-time debug stats
+  const [debugStats, setDebugStats] = useState({ scale: 1, fps: 0, visibleCards: 0, totalCards: 0, avgCardWidth: 0, renderMs: 0, cullMs: 0, prepMs: 0, drawMs: 0, updateMs: 0, snapMs: 0 }); // Real-time debug stats
   const [cardStyle, setCardStyle] = useState<CardStyle>('imageOnly'); // F10: Card Style (Default: imageOnly)
   const [isGlowBorderEnabled, setIsGlowBorderEnabled] = useState(true); // F11: Glow Border on active kiosk card (Default: ON)
   const [isMinGroupingEnabled, setIsMinGroupingEnabled] = useState(true); // F12: Min 2 per column grouping (Default: ON)
@@ -846,6 +849,14 @@ function App() {
       }
       lastFrameTimeRef.current = currentTime - (renderDelta % renderInterval);
 
+      // === TIMING: Start frame measurement ===
+      const frameStartTime = performance.now();
+      let cullMs = 0;
+      let updateMs = 0;
+      let snapMs = 0;
+      let prepMs = 0;
+      let drawMs = 0;
+
       // Dynamic update interval based on configurable updateFPS
       const updateInterval = 1000 / updateFPS;
       const updateDelta = currentTime - lastUpdateTimeRef.current;
@@ -854,6 +865,8 @@ function App() {
         lastUpdateTimeRef.current = currentTime - (updateDelta % updateInterval);
 
         // === UPDATE LOOP (runs at updateFPS) ===
+        const cullStartTime = performance.now();
+
         // Perform culling check here instead of every render frame
         const nodes = layoutEngineRef.current.all();
         const devicePixelRatio = window.devicePixelRatio || 1;
@@ -877,10 +890,17 @@ function App() {
             visibleNodesRef.current.add(node.data.id);
           }
         });
+
+        cullMs = performance.now() - cullStartTime;
       }
 
+      // === TIMING: Viewport update ===
+      const updateStartTime = performance.now();
       viewport.update();
+      updateMs = performance.now() - updateStartTime;
 
+      // === TIMING: Snap-to-Content ===
+      const snapStartTime = performance.now();
       // Snap-to-Content: Only active in 'snapToContent' mode
       if (viewportMode === 'snapToContent') {
         snapControllerRef.current.update(
@@ -891,6 +911,10 @@ function App() {
           window.innerHeight
         );
       }
+      snapMs = performance.now() - snapStartTime;
+
+      // === TIMING: Preparation (eventMap, active card, etc.) ===
+      const prepStartTime = performance.now();
 
       const nodes = layoutEngineRef.current.all();
 
@@ -920,8 +944,10 @@ function App() {
         (isManualMode && manuallySelectedIndex !== undefined)
       );
 
-      // Measure render time
-      const renderStartTime = performance.now();
+      prepMs = performance.now() - prepStartTime;
+
+      // === TIMING: Draw (renderer.renderFrame) ===
+      const drawStartTime = performance.now();
 
       renderer.renderFrame({
         ctx,
@@ -946,8 +972,10 @@ function App() {
         visibleNodeIds: visibleNodesRef.current, // Pre-computed visible nodes from update loop
       });
 
-      const renderEndTime = performance.now();
-      const renderMs = renderEndTime - renderStartTime;
+      drawMs = performance.now() - drawStartTime;
+
+      // Total frame time
+      const renderMs = performance.now() - frameStartTime;
 
       // Update FPS counter
       fpsFrameCountRef.current++;
@@ -998,6 +1026,11 @@ function App() {
           totalCards: nodes.length,
           avgCardWidth: avgCardScreenWidth,
           renderMs: Math.round(renderMs * 100) / 100,
+          cullMs: Math.round(cullMs * 100) / 100,
+          prepMs: Math.round(prepMs * 100) / 100,
+          drawMs: Math.round(drawMs * 100) / 100,
+          updateMs: Math.round(updateMs * 100) / 100,
+          snapMs: Math.round(snapMs * 100) / 100,
         };
 
         // Only update state if debug panel is visible (to avoid unnecessary re-renders)
@@ -1078,7 +1111,7 @@ function App() {
             </span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-            <span style={{ fontSize: '11px', opacity: 0.8 }}>Render:</span>
+            <span style={{ fontSize: '11px', opacity: 0.8 }}>Total Frame:</span>
             <span style={{
               fontSize: '14px',
               color: debugStats.renderMs > 16 ? '#ef4444' : debugStats.renderMs > 8 ? '#eab308' : '#22c55e'
@@ -1086,7 +1119,54 @@ function App() {
               {debugStats.renderMs}ms {debugStats.renderMs > 16 ? '(slow!)' : ''}
             </span>
           </div>
-          <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '4px' }}>
+
+          {/* Detailed Timing Breakdown */}
+          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.15)' }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', opacity: 0.9, marginBottom: '4px' }}>Timing Breakdown:</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 8px', fontSize: '10px' }}>
+              <span style={{ opacity: 0.7 }}>Draw (Canvas):</span>
+              <span style={{ color: debugStats.drawMs > 10 ? '#ef4444' : debugStats.drawMs > 5 ? '#eab308' : '#22c55e', fontWeight: 'bold' }}>
+                {debugStats.drawMs}ms
+              </span>
+              <span style={{ opacity: 0.7 }}>Cull (Visibility):</span>
+              <span style={{ color: debugStats.cullMs > 2 ? '#eab308' : '#22c55e' }}>
+                {debugStats.cullMs}ms
+              </span>
+              <span style={{ opacity: 0.7 }}>Prep (EventMap):</span>
+              <span style={{ color: debugStats.prepMs > 2 ? '#eab308' : '#22c55e' }}>
+                {debugStats.prepMs}ms
+              </span>
+              <span style={{ opacity: 0.7 }}>Update (Viewport):</span>
+              <span style={{ color: debugStats.updateMs > 1 ? '#eab308' : '#22c55e' }}>
+                {debugStats.updateMs}ms
+              </span>
+              <span style={{ opacity: 0.7 }}>Snap (Controller):</span>
+              <span style={{ color: debugStats.snapMs > 1 ? '#eab308' : '#22c55e' }}>
+                {debugStats.snapMs}ms
+              </span>
+            </div>
+            {/* Visual Bar showing time distribution */}
+            <div style={{ marginTop: '6px', height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden', display: 'flex' }}>
+              {debugStats.renderMs > 0 && (
+                <>
+                  <div style={{ width: `${(debugStats.drawMs / debugStats.renderMs) * 100}%`, background: '#ef4444', height: '100%' }} title={`Draw: ${debugStats.drawMs}ms`} />
+                  <div style={{ width: `${(debugStats.cullMs / debugStats.renderMs) * 100}%`, background: '#f472b6', height: '100%' }} title={`Cull: ${debugStats.cullMs}ms`} />
+                  <div style={{ width: `${(debugStats.prepMs / debugStats.renderMs) * 100}%`, background: '#60a5fa', height: '100%' }} title={`Prep: ${debugStats.prepMs}ms`} />
+                  <div style={{ width: `${(debugStats.updateMs / debugStats.renderMs) * 100}%`, background: '#4ade80', height: '100%' }} title={`Update: ${debugStats.updateMs}ms`} />
+                  <div style={{ width: `${(debugStats.snapMs / debugStats.renderMs) * 100}%`, background: '#a78bfa', height: '100%' }} title={`Snap: ${debugStats.snapMs}ms`} />
+                </>
+              )}
+            </div>
+            <div style={{ fontSize: '9px', opacity: 0.5, marginTop: '4px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <span><span style={{ display: 'inline-block', width: '8px', height: '8px', background: '#ef4444', borderRadius: '2px', marginRight: '2px' }}></span>Draw</span>
+              <span><span style={{ display: 'inline-block', width: '8px', height: '8px', background: '#f472b6', borderRadius: '2px', marginRight: '2px' }}></span>Cull</span>
+              <span><span style={{ display: 'inline-block', width: '8px', height: '8px', background: '#60a5fa', borderRadius: '2px', marginRight: '2px' }}></span>Prep</span>
+              <span><span style={{ display: 'inline-block', width: '8px', height: '8px', background: '#4ade80', borderRadius: '2px', marginRight: '2px' }}></span>Update</span>
+              <span><span style={{ display: 'inline-block', width: '8px', height: '8px', background: '#a78bfa', borderRadius: '2px', marginRight: '2px' }}></span>Snap</span>
+            </div>
+          </div>
+
+          <div style={{ fontSize: '10px', opacity: 0.5, marginTop: '6px' }}>
             LOD Threshold: {kioskSettings.detailLodThreshold || 180}px | Target: 16.6ms/frame
           </div>
 
