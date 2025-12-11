@@ -80,7 +80,7 @@ const DEFAULT_CONFIG: DayTimelinePortraitConfig = {
   cardWidth: 300,
   cardHeight: 486, // Golden ratio portrait (1:1.618): 300 * 1.618 = 486
   marginLeft: 24,
-  minArticlesPerColumn: 2, // Merge single-item columns into next column
+  minArticlesPerColumn: 3, // Merge columns with <3 articles into next column
 };
 
 type DayGroup = {

@@ -622,7 +622,7 @@ function App() {
   useEffect(() => {
     // Recreate portrait layouter with updated config
     dayPortraitLayouterRef.current = new DayTimelinePortraitLayouter({
-      minArticlesPerColumn: isMinGroupingEnabled ? 2 : 1,
+      minArticlesPerColumn: isMinGroupingEnabled ? 3 : 1,
     });
 
     // If currently using portrait mode, update the layout engine
