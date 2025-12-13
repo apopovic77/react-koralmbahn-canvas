@@ -64,7 +64,7 @@ function resolveApiBaseUrl(): string {
   }
 
   if (import.meta.env.DEV) {
-    return 'http://localhost:8081';
+    return 'http://localhost:8082'; // eventcrawler-v2 default port
   }
 
   if (typeof window !== 'undefined' && window.location) {
@@ -160,6 +160,15 @@ function mapEventToKoralmEvent(event: Event): KoralmEvent {
 }
 
 /**
+ * Project info from API
+ */
+export interface ProjectInfo {
+  id: number;
+  slug: string;
+  name: string;
+}
+
+/**
  * Kiosk settings from server
  */
 export interface KioskSettings {
@@ -209,24 +218,60 @@ export async function fetchKioskSettings(): Promise<KioskSettings> {
 }
 
 /**
+ * Fetch available projects from API
+ */
+export async function fetchProjects(): Promise<ProjectInfo[]> {
+  const baseUrl = resolveApiBaseUrl();
+  const url = `${baseUrl}/api/v1/projects/`;
+
+  console.log('[KoralmAPI] Fetching projects from:', url);
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    console.log('[KoralmAPI] Loaded projects:', data);
+    return data as ProjectInfo[];
+  } catch (error) {
+    console.error('[KoralmAPI] Failed to fetch projects:', error);
+    // Return default projects as fallback
+    return [
+      { id: 1, slug: 'default', name: 'Koralmbahn' },
+    ];
+  }
+}
+
+/**
  * Fetch events from EventCrawler v2 API using the SDK
+ * @param limit Maximum number of events to fetch
+ * @param projectSlug Optional project slug to filter by (e.g., 'default', 'tscheppaschlucht')
  */
 export async function fetchKoralmEvents(
-  limit: number = 300
+  limit: number = 300,
+  projectSlug?: string
 ): Promise<KoralmEvent[]> {
   const api = createEventsApi();
 
-  console.log('[KoralmAPI] Fetching events from:', resolveApiBaseUrl());
+  const logPrefix = projectSlug ? `[KoralmAPI:${projectSlug}]` : '[KoralmAPI]';
+  console.log(`${logPrefix} Fetching events from:`, resolveApiBaseUrl());
 
   try {
-    const response = await api.listEventsApiV1EventsGet({ limit });
+    // Build request params with optional project filter
+    const params: { limit: number; projectSlug?: string } = { limit };
+    if (projectSlug) {
+      params.projectSlug = projectSlug;
+    }
+
+    const response = await api.listEventsApiV1EventsGet(params);
     const events = response.data;
 
-    console.log(`[KoralmAPI] Loaded ${events.length} events`);
+    console.log(`${logPrefix} Loaded ${events.length} events`);
 
     return events.map(mapEventToKoralmEvent);
   } catch (error) {
-    console.error('[KoralmAPI] Fetch failed:', error);
+    console.error(`${logPrefix} Fetch failed:`, error);
     return [];
   }
 }

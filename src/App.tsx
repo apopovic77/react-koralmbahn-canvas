@@ -5,7 +5,7 @@ import { ViewportTransform, useLODTransitions } from 'arkturian-canvas-engine';
 import { LayoutEngine } from 'arkturian-canvas-engine/src/layout/LayoutEngine';
 import type { LayoutNode } from 'arkturian-canvas-engine/src/layout/LayoutNode';
 
-import { fetchKoralmEvents, fetchKioskSettings, DEFAULT_KIOSK_SETTINGS, type KioskSettings } from './api/koralmbahnApi';
+import { fetchKoralmEvents, fetchKioskSettings, fetchProjects, DEFAULT_KIOSK_SETTINGS, type KioskSettings, type ProjectInfo } from './api/koralmbahnApi';
 import type { CardStyle, KoralmEvent } from './types/koralmbahn';
 import { useKioskMode } from './hooks/useKioskMode';
 import { useManualMode } from './hooks/useManualMode';
@@ -115,6 +115,8 @@ function App() {
   const [heroImageOnly, setHeroImageOnly] = useState(false); // Only show events with hero images (not screenshots)
   const [kioskSettings, setKioskSettings] = useState<KioskSettings>(DEFAULT_KIOSK_SETTINGS); // Server-side kiosk settings
   const [updateFPS, setUpdateFPS] = useState(DEFAULT_UPDATE_FPS); // Configurable update rate for culling/LOD
+  const [availableProjects, setAvailableProjects] = useState<ProjectInfo[]>([]); // Available projects from API
+  const [selectedProjectSlug, setSelectedProjectSlug] = useState<string>('default'); // Selected project slug (default = Koralmbahn)
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Click detection refs (to distinguish clicks from drags)
@@ -396,19 +398,33 @@ function App() {
     searchInputRef.current?.blur();
   };
 
-  // Load events on mount
+  // Load available projects on mount
+  useEffect(() => {
+    async function loadProjects() {
+      console.log('[App] Loading available projects...');
+      const projects = await fetchProjects();
+      setAvailableProjects(projects);
+      console.log(`[App] Loaded ${projects.length} projects:`, projects.map(p => p.slug));
+    }
+    loadProjects();
+  }, []);
+
+  // Load events when project selection changes
   useEffect(() => {
     async function loadEvents() {
-      console.log('[App] Loading Koralmbahn events...');
-      const data = await fetchKoralmEvents(1000);
+      const projectName = availableProjects.find(p => p.slug === selectedProjectSlug)?.name || selectedProjectSlug;
+      console.log(`[App] Loading events for project: ${projectName} (${selectedProjectSlug})...`);
+      setIsLoading(true);
+      const data = await fetchKoralmEvents(1000, selectedProjectSlug);
       setEvents(data);
-      console.log(`[App] Loaded ${data.length} events`);
+      console.log(`[App] Loaded ${data.length} events for ${projectName}`);
 
       await preloadImages(data);
+      setIsLoading(false);
     }
 
     loadEvents();
-  }, []);
+  }, [selectedProjectSlug]);
 
   // Load kiosk settings from server
   useEffect(() => {
@@ -1076,6 +1092,45 @@ function App() {
         overflowY: 'auto',
       }}>
         <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '13px' }}>Debug Panel (F9 to hide)</div>
+
+        {/* Project Selector */}
+        {availableProjects.length > 1 && (
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.2)',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            marginBottom: '10px',
+            border: '1px solid #3b82f6',
+          }}>
+            <div style={{ fontSize: '11px', opacity: 0.8, marginBottom: '6px' }}>Project:</div>
+            <select
+              value={selectedProjectSlug}
+              onChange={(e) => setSelectedProjectSlug(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                background: '#1e293b',
+                color: '#fff',
+                border: '1px solid #475569',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
+            >
+              {availableProjects.map((project) => (
+                <option key={project.slug} value={project.slug}>
+                  {project.name} ({project.slug})
+                </option>
+              ))}
+            </select>
+            {isLoading && (
+              <div style={{ fontSize: '10px', color: '#f472b6', marginTop: '4px' }}>
+                Loading events...
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Performance Stats - prominent display */}
         <div style={{
