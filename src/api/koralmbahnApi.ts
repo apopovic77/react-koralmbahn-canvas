@@ -229,7 +229,7 @@ export async function fetchProjects(): Promise<ProjectInfo[]> {
     console.error('[KoralmAPI] Failed to fetch projects:', error);
     // Return default projects as fallback
     return [
-      { id: 1, slug: 'koralmbahn', name: 'Koralmbahn' },
+      { id: 1, slug: 'default', name: 'Koralmbahn' },
     ];
   }
 }
