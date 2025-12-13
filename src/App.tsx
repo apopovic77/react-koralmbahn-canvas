@@ -116,7 +116,7 @@ function App() {
   const [kioskSettings, setKioskSettings] = useState<KioskSettings>(DEFAULT_KIOSK_SETTINGS); // Server-side kiosk settings
   const [updateFPS, setUpdateFPS] = useState(DEFAULT_UPDATE_FPS); // Configurable update rate for culling/LOD
   const [availableProjects, setAvailableProjects] = useState<ProjectInfo[]>([]); // Available projects from API
-  const [selectedProjectSlug, setSelectedProjectSlug] = useState<string>('default'); // Selected project slug (default = Koralmbahn)
+  const [selectedProjectSlug, setSelectedProjectSlug] = useState<string>('koralmbahn'); // Selected project slug
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Click detection refs (to distinguish clicks from drags)
@@ -140,6 +140,7 @@ function App() {
     initialEvents: events,
     pollInterval: 60000, // 60 seconds
     enabled: events.length > 0, // Only enable after initial load
+    projectSlug: selectedProjectSlug, // Filter by selected project
     onEventsChange: (newEvents) => {
       // Update the main events state when sync detects changes
       if (newEvents.length !== events.length) {

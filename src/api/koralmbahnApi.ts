@@ -1,4 +1,4 @@
-import { Configuration, EventsApi, type Event } from 'eventcrawler-api-sdk';
+import type { Event } from 'eventcrawler-api-sdk';
 import type { KoralmEvent } from '../types/koralmbahn';
 
 // Storage API configuration
@@ -74,15 +74,6 @@ function resolveApiBaseUrl(): string {
   return '';
 }
 
-/**
- * Create configured EventsApi instance
- */
-function createEventsApi(): EventsApi {
-  const config = new Configuration({
-    basePath: resolveApiBaseUrl()
-  });
-  return new EventsApi(config);
-}
 
 /**
  * Map SDK Event to KoralmEvent for UI consumption
@@ -238,13 +229,14 @@ export async function fetchProjects(): Promise<ProjectInfo[]> {
     console.error('[KoralmAPI] Failed to fetch projects:', error);
     // Return default projects as fallback
     return [
-      { id: 1, slug: 'default', name: 'Koralmbahn' },
+      { id: 1, slug: 'koralmbahn', name: 'Koralmbahn' },
     ];
   }
 }
 
 /**
- * Fetch events from EventCrawler v2 API using the SDK
+ * Fetch events from EventCrawler v2 API
+ * Uses direct fetch instead of SDK to support project_slug parameter
  * @param limit Maximum number of events to fetch
  * @param projectSlug Optional project slug to filter by (e.g., 'default', 'tscheppaschlucht')
  */
@@ -252,20 +244,24 @@ export async function fetchKoralmEvents(
   limit: number = 300,
   projectSlug?: string
 ): Promise<KoralmEvent[]> {
-  const api = createEventsApi();
-
+  const baseUrl = resolveApiBaseUrl();
   const logPrefix = projectSlug ? `[KoralmAPI:${projectSlug}]` : '[KoralmAPI]';
-  console.log(`${logPrefix} Fetching events from:`, resolveApiBaseUrl());
+
+  // Build URL with query parameters (trailing slash to avoid 307 redirect)
+  const url = new URL(`${baseUrl}/api/v1/events/`);
+  url.searchParams.set('limit', String(limit));
+  if (projectSlug) {
+    url.searchParams.set('project_slug', projectSlug);
+  }
+
+  console.log(`${logPrefix} Fetching events from:`, url.toString());
 
   try {
-    // Build request params with optional project filter
-    const params: { limit: number; projectSlug?: string } = { limit };
-    if (projectSlug) {
-      params.projectSlug = projectSlug;
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
-
-    const response = await api.listEventsApiV1EventsGet(params);
-    const events = response.data;
+    const events = await response.json() as Event[];
 
     console.log(`${logPrefix} Loaded ${events.length} events`);
 

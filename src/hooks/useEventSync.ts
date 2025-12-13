@@ -24,6 +24,8 @@ interface UseEventSyncOptions {
   apiBaseUrl?: string;
   /** Enable/disable sync (default: true) */
   enabled?: boolean;
+  /** Project slug to filter events (optional) */
+  projectSlug?: string;
   /** Callback when events change */
   onEventsChange?: (events: KoralmEvent[]) => void;
 }
@@ -73,6 +75,7 @@ export function useEventSync(options: UseEventSyncOptions): UseEventSyncResult {
     pollInterval = 60000,
     apiBaseUrl = resolveApiBaseUrl(),
     enabled = true,
+    projectSlug,
     onEventsChange,
   } = options;
 
@@ -89,9 +92,30 @@ export function useEventSync(options: UseEventSyncOptions): UseEventSyncResult {
   // Track server time for delta queries
   const serverTimeRef = useRef<string | null>(null);
 
-  // Update events when initialEvents change (first load)
+  // Track previous project slug to detect changes
+  const prevProjectSlugRef = useRef<string | undefined>(projectSlug);
+
+  // Reset state when projectSlug changes (user switched projects)
   useEffect(() => {
+    if (prevProjectSlugRef.current !== projectSlug) {
+      console.log(`[EventSync] Project changed from "${prevProjectSlugRef.current}" to "${projectSlug}", resetting state`);
+      prevProjectSlugRef.current = projectSlug;
+      // Reset server time to prevent stale sync
+      serverTimeRef.current = null;
+      // Clear internal events - will be repopulated from initialEvents
+      setEvents([]);
+      setLastSyncStats(null);
+      setLastSyncTime(null);
+    }
+  }, [projectSlug]);
+
+  // Update events when initialEvents change (first load or project change)
+  useEffect(() => {
+    // Only update if we have initial events AND either:
+    // - Our internal state is empty (first load or after project change reset)
+    // - The initialEvents array is different (user explicitly reloaded)
     if (initialEvents.length > 0 && events.length === 0) {
+      console.log(`[EventSync] Setting ${initialEvents.length} initial events`);
       setEvents(initialEvents);
       // Set initial server time to now
       serverTimeRef.current = new Date().toISOString();
@@ -115,10 +139,15 @@ export function useEventSync(options: UseEventSyncOptions): UseEventSyncResult {
     setLastError(null);
 
     try {
-      const url = new URL(`${apiBaseUrl}/api/v1/events/changes`);
+      // Use trailing slash to avoid 307 redirect
+      const url = new URL(`${apiBaseUrl}/api/v1/events/changes/`);
       url.searchParams.set('since', serverTimeRef.current);
+      // Add project_slug filter if specified
+      if (projectSlug) {
+        url.searchParams.set('project_slug', projectSlug);
+      }
 
-      console.log(`[EventSync] Fetching changes since ${serverTimeRef.current}`);
+      console.log(`[EventSync] Fetching changes since ${serverTimeRef.current}${projectSlug ? ` for project ${projectSlug}` : ''}`);
 
       const response = await fetch(url.toString());
 
@@ -182,7 +211,7 @@ export function useEventSync(options: UseEventSyncOptions): UseEventSyncResult {
     } finally {
       setIsSyncing(false);
     }
-  }, [apiBaseUrl, enabled]);
+  }, [apiBaseUrl, enabled, projectSlug]);
 
   // Set up polling interval
   useEffect(() => {
